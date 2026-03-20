@@ -7,7 +7,6 @@ import { useLocationStore } from '@/store/location-store';
 import { useAuthStore } from '@/store/auth-store';
 import NativeMapViewFull from '@/components/NativeMapViewFull';
 import { getNearbyTrafficLights } from '@/constants/traffic-light-locations';
-
 interface LocationSuggestion {
   name: string;
   address: string;
@@ -19,9 +18,15 @@ interface LocationSuggestion {
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U';
 
+/** Safely get string from route params (can be string | string[] | undefined) */
+function safeParam(p: string | string[] | undefined): string {
+  return typeof p === 'string' ? p : Array.isArray(p) ? (p[0] ?? '') : '';
+}
+
 export default function MapScreen() {
   const params = useLocalSearchParams();
   const { showLocation, latitude, longitude, senderId, address } = params;
+  const addressStr = safeParam(address);
   const [showDirections, setShowDirections] = useState(false);
   const [showRouteDetails, setShowRouteDetails] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -44,12 +49,9 @@ export default function MapScreen() {
   const sharedLat = latitude ? parseFloat(latitude as string) : null;
   const sharedLng = longitude ? parseFloat(longitude as string) : null;
 
-  const nearbyTrafficLights = useMemo(() => {
-    if (!currentLocation) return [];
-    return getNearbyTrafficLights(currentLocation.latitude, currentLocation.longitude, 5);
-  }, [currentLocation?.latitude, currentLocation?.longitude]);
-
-  const nearestTrafficLight = nearbyTrafficLights[0];
+  const nearbyTrafficLights = currentLocation
+    ? getNearbyTrafficLights(currentLocation.latitude, currentLocation.longitude, 8)
+    : [];
   
   useEffect(() => {
     const trackLocation = async () => {
@@ -62,7 +64,7 @@ export default function MapScreen() {
         latitude: sharedLat,
         longitude: sharedLng,
         timestamp: new Date().toISOString(),
-        address: address as string
+        address: addressStr
       };
       
       calculateRoute(currentLocation, destination).then((route) => {
@@ -79,7 +81,7 @@ export default function MapScreen() {
       
       return () => clearInterval(interval);
     }
-  }, [showLocation, sharedLat, sharedLng, currentLocation, address, calculateRoute, startLocationTracking]);
+  }, [showLocation, sharedLat, sharedLng, currentLocation, addressStr, calculateRoute, startLocationTracking]);
   
   useEffect(() => {
     return () => {
@@ -89,63 +91,144 @@ export default function MapScreen() {
     };
   }, [showLocation, clearRoute]);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
+
   useEffect(() => {
-    if (searchText.length > 2 && currentLocation) {
-      fetchLocationSuggestions(searchText);
-    } else {
+    if (searchText.length < 3) {
       setSuggestions([]);
+      setHasSearched(false);
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!currentLocation) {
+      setSuggestions([]);
+      setHasSearched(true);
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      fetchLocationSuggestions(searchText);
+      setHasSearched(true);
+    }, 350);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [searchText, currentLocation]);
 
   const fetchLocationSuggestions = async (query: string) => {
     if (!currentLocation) return;
-    
+
     setIsLoadingSuggestions(true);
     try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&location=${currentLocation.latitude},${currentLocation.longitude}&radius=2000&key=${GOOGLE_MAPS_API_KEY}`
+      // Places API (New) - Autocomplete
+      const autocompleteResponse = await fetch(
+        'https://places.googleapis.com/v1/places:autocomplete',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+            'X-Goog-FieldMask': 'suggestions.placePrediction.place,suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.mainText',
+          },
+          body: JSON.stringify({
+            input: query,
+            locationBias: {
+              circle: {
+                center: {
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                },
+                radius: 50000.0,
+              },
+            },
+          }),
+        }
       );
-      const data = await response.json();
-      
-      if (data.predictions && data.predictions.length > 0) {
-        const suggestionsWithDetails = await Promise.all(
-          data.predictions.slice(0, 5).map(async (prediction: any) => {
-            const placeDetailsResponse = await fetch(
-              `https://maps.googleapis.com/maps/api/place/details/json?place_id=${prediction.place_id}&fields=geometry&key=${GOOGLE_MAPS_API_KEY}`
-            );
-            const placeDetails = await placeDetailsResponse.json();
-            
-            if (placeDetails.result && placeDetails.result.geometry) {
-              const destLat = placeDetails.result.geometry.location.lat;
-              const destLng = placeDetails.result.geometry.location.lng;
-              
-              const distance = calculateDistance(
-                currentLocation.latitude,
-                currentLocation.longitude,
-                destLat,
-                destLng
-              );
-              
-              const time = Math.ceil((distance / 40) * 60);
-              
-              return {
-                name: prediction.structured_formatting.main_text,
-                address: prediction.description,
-                distance: `${distance.toFixed(1)} km`,
-                time: `${time} min`,
-                latitude: destLat,
-                longitude: destLng,
-              };
-            }
-            return null;
-          })
-        );
-        
-        setSuggestions(suggestionsWithDetails.filter(s => s !== null) as LocationSuggestion[]);
-      } else {
+
+      const autocompleteData = await autocompleteResponse.json();
+
+      if (!autocompleteData.suggestions || autocompleteData.suggestions.length === 0) {
         setSuggestions([]);
+        return;
       }
+
+      const placePredictions = autocompleteData.suggestions.filter(
+        (s: any) => s.placePrediction && s.placePrediction.place
+      );
+
+      if (placePredictions.length === 0) {
+        setSuggestions([]);
+        return;
+      }
+
+      const suggestionsWithDetails = await Promise.all(
+        placePredictions.slice(0, 5).map(async (item: any) => {
+          try {
+            const pred = item.placePrediction;
+            const placeResource = pred.place; // "places/ChIJ..."
+            const placeId = placeResource.startsWith('places/') ? placeResource.slice(7) : placeResource;
+
+            // Place Details (New) - GET
+            const detailsResponse = await fetch(
+              `https://places.googleapis.com/v1/places/${placeId}`,
+              {
+                headers: {
+                  'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                  'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,viewport',
+                },
+              }
+            );
+
+            const placeDetails = await detailsResponse.json();
+
+            let destLat: number | null = null;
+            let destLng: number | null = null;
+
+            if (placeDetails.location) {
+              destLat = placeDetails.location.latitude ?? placeDetails.location.lat ?? null;
+              destLng = placeDetails.location.longitude ?? placeDetails.location.lng ?? null;
+            }
+            if ((destLat == null || destLng == null) && placeDetails.viewport) {
+              const v = placeDetails.viewport;
+              const low = v.low ?? v.southwest;
+              const high = v.high ?? v.northeast;
+              if (low && high) {
+                destLat = (low.latitude + high.latitude) / 2;
+                destLng = (low.longitude + high.longitude) / 2;
+              }
+            }
+            if (destLat == null || destLng == null) return null;
+
+            const distance = calculateDistance(
+              currentLocation.latitude,
+              currentLocation.longitude,
+              destLat,
+              destLng
+            );
+            const time = Math.ceil((distance / 40) * 60);
+            const name = placeDetails.displayName?.text ?? pred.mainText?.text ?? pred.text?.text ?? 'Place';
+            const address = placeDetails.formattedAddress ?? pred.text?.text ?? '';
+
+            return {
+              name,
+              address,
+              distance: `${distance.toFixed(1)} km`,
+              time: `${time} min`,
+              latitude: destLat,
+              longitude: destLng,
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      setSuggestions(suggestionsWithDetails.filter((s): s is LocationSuggestion => s !== null));
     } catch (error) {
       console.error('Error fetching suggestions:', error);
       setSuggestions([]);
@@ -203,7 +286,7 @@ export default function MapScreen() {
         latitude: sharedLat,
         longitude: sharedLng,
         timestamp: new Date().toISOString(),
-        address: address as string
+        address: addressStr
       };
       
       const route = await calculateRoute(currentLocation, destination);
@@ -267,7 +350,7 @@ export default function MapScreen() {
             currentLocation={currentLocation}
             sharedLat={selectedDestination?.latitude || sharedLat}
             sharedLng={selectedDestination?.longitude || sharedLng}
-            address={selectedDestination?.address || (address as string)}
+            address={selectedDestination?.address || addressStr}
             showLocation={showLocation === 'true' || !!selectedDestination}
             showDirections={showDirections}
             currentRoute={currentRoute}
@@ -279,10 +362,10 @@ export default function MapScreen() {
           <View style={styles.locationInfoPanel}>
             <View style={styles.locationHeader}>
               <MapPin color="#007AFF" size={20} />
-              <Text style={styles.locationTitle}>{address || 'Shared Location'}</Text>
+              <Text style={styles.locationTitle}>{addressStr || 'Shared Location'}</Text>
             </View>
             <Text style={styles.locationSubtitle}>
-              Shared by {senderId === user?.id ? 'You' : 'Contact'}
+              Shared by {safeParam(senderId) === user?.id ? 'You' : 'Contact'}
             </Text>
             {isCalculatingRoute && (
               <View style={styles.loadingContainer}>
@@ -295,11 +378,11 @@ export default function MapScreen() {
                 <View style={styles.routeInfo}>
                   <View style={styles.routeDetail}>
                     <Route color="#666" size={16} />
-                    <Text style={styles.routeText}>{currentRoute.distance}</Text>
+                    <Text style={styles.routeText}>{String(currentRoute.distance ?? '')}</Text>
                   </View>
                   <View style={styles.routeDetail}>
                     <Clock color="#666" size={16} />
-                    <Text style={styles.routeText}>{currentRoute.duration}</Text>
+                    <Text style={styles.routeText}>{String(currentRoute.duration ?? '')}</Text>
                   </View>
                 </View>
                 <View style={styles.actionButtonsRow}>
@@ -344,45 +427,41 @@ export default function MapScreen() {
           </TouchableOpacity>
         </View>
 
-        {isFocused && (suggestions.length > 0 || isLoadingSuggestions) && (
+        {isFocused && (
           <View style={styles.wazeSuggestionsPanel}>
             <ScrollView style={styles.suggestionsList}>
               {isLoadingSuggestions ? (
-                <ActivityIndicator size="small" color="#33ccff" style={{ padding: 20 }} />
-              ) : (
+                <View style={styles.suggestionEmptyState}>
+                  <ActivityIndicator size="small" color="#33ccff" />
+                  <Text style={styles.suggestionEmptyText}>Searching places...</Text>
+                </View>
+              ) : suggestions.length > 0 ? (
                 suggestions.map((suggestion, index) => (
                   <TouchableOpacity
-                    key={index}
+                    key={`${suggestion.latitude}-${suggestion.longitude}-${index}`}
                     style={styles.suggestionItem}
                     onPress={() => handleSelectLocation(suggestion)}
                   >
                     <MapPin color="#33ccff" size={24} />
                     <View style={styles.suggestionContent}>
-                      <Text style={styles.suggestionName}>{suggestion.name}</Text>
-                      <Text style={styles.suggestionAddress}>{suggestion.address}</Text>
+                      <Text style={styles.suggestionName}>{String(suggestion.name ?? '')}</Text>
+                      <Text style={styles.suggestionAddress}>{String(suggestion.address ?? '')}</Text>
                     </View>
-                    <Text style={styles.suggestionDistance}>{suggestion.distance}</Text>
+                    <Text style={styles.suggestionDistance}>{String(suggestion.distance ?? '')}</Text>
                   </TouchableOpacity>
                 ))
+              ) : (
+                <View style={styles.suggestionEmptyState}>
+                  <Text style={styles.suggestionEmptyText}>
+                    {searchText.length < 3
+                      ? 'Type at least 3 characters to search'
+                      : !currentLocation
+                        ? 'Enable location to search nearby places'
+                        : 'No places found. Try a different search.'}
+                  </Text>
+                </View>
               )}
             </ScrollView>
-          </View>
-        )}
-
-        {/* Traffic light nearby alert - Waze style (hide when search focused) */}
-        {!isFocused && nearestTrafficLight && nearestTrafficLight.distanceKm < 2 && (
-          <View style={styles.trafficLightAlert}>
-            <View style={styles.trafficLightIcon}>
-              <View style={[styles.tlDot, { backgroundColor: '#ef4444' }]} />
-              <View style={[styles.tlDot, { backgroundColor: '#eab308' }]} />
-              <View style={[styles.tlDot, { backgroundColor: '#22c55e' }]} />
-            </View>
-            <View style={styles.trafficLightInfo}>
-              <Text style={styles.trafficLightTitle}>Traffic light ahead</Text>
-              <Text style={styles.trafficLightSubtitle}>
-                {nearestTrafficLight.name} • {(nearestTrafficLight.distanceKm * 1000).toFixed(0)} m
-              </Text>
-            </View>
           </View>
         )}
 
@@ -390,18 +469,18 @@ export default function MapScreen() {
         {(showDirections || selectedDestination) && currentRoute && (
           <View style={styles.wazeEtaPanel}>
             <View style={styles.wazeEtaMain}>
-              <Text style={styles.wazeEtaTime}>{getEtaTime()}</Text>
+              <Text style={styles.wazeEtaTime}>{String(getEtaTime())}</Text>
               <Text style={styles.wazeEtaLabel}>Arrival</Text>
             </View>
             <View style={styles.wazeEtaDivider} />
             <View style={styles.wazeEtaSecondary}>
               <View style={styles.wazeEtaRow}>
                 <Clock color="#fff" size={18} />
-                <Text style={styles.wazeEtaValue}>{currentRoute.duration}</Text>
+                <Text style={styles.wazeEtaValue}>{String(currentRoute.duration ?? '')}</Text>
               </View>
               <View style={styles.wazeEtaRow}>
                 <Route color="#fff" size={18} />
-                <Text style={styles.wazeEtaValue}>{currentRoute.distance}</Text>
+                <Text style={styles.wazeEtaValue}>{String(currentRoute.distance ?? '')}</Text>
               </View>
             </View>
             <TouchableOpacity style={styles.wazeGoButton} onPress={handleStartNavigation}>
@@ -430,11 +509,11 @@ export default function MapScreen() {
               <View style={styles.routeSummary}>
                 <View style={styles.routeSummaryItem}>
                   <Route color="#007AFF" size={20} />
-                  <Text style={styles.routeSummaryText}>{currentRoute.distance}</Text>
+                  <Text style={styles.routeSummaryText}>{String(currentRoute.distance ?? '')}</Text>
                 </View>
                 <View style={styles.routeSummaryItem}>
                   <Clock color="#007AFF" size={20} />
-                  <Text style={styles.routeSummaryText}>{currentRoute.duration}</Text>
+                  <Text style={styles.routeSummaryText}>{String(currentRoute.duration ?? '')}</Text>
                 </View>
               </View>
               
@@ -445,10 +524,10 @@ export default function MapScreen() {
                       <Text style={styles.routeStepNumberText}>{index + 1}</Text>
                     </View>
                     <View style={styles.routeStepContent}>
-                      <Text style={styles.routeStepInstruction}>{step.instruction}</Text>
+                      <Text style={styles.routeStepInstruction}>{String(step.instruction ?? '')}</Text>
                       <View style={styles.routeStepDetails}>
-                        <Text style={styles.routeStepDistance}>{step.distance}</Text>
-                        <Text style={styles.routeStepDuration}>• {step.duration}</Text>
+                        <Text style={styles.routeStepDistance}>{String(step.distance ?? '')}</Text>
+                        <Text style={styles.routeStepDuration}>• {String(step.duration ?? '')}</Text>
                       </View>
                     </View>
                   </View>
@@ -516,43 +595,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 8,
-  },
-  trafficLightAlert: {
-    position: 'absolute',
-    top: 115,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: '#22c55e',
-  },
-  trafficLightIcon: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  tlDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginVertical: 2,
-  },
-  trafficLightInfo: {
-    flex: 1,
-  },
-  trafficLightTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  trafficLightSubtitle: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginTop: 2,
   },
   wazeEtaPanel: {
     position: 'absolute',
@@ -806,6 +848,17 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E5EA',
     alignItems: 'center',
     backgroundColor: 'white',
+  },
+  suggestionEmptyState: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    gap: 12,
+  },
+  suggestionEmptyText: {
+    fontSize: 15,
+    color: '#666',
   },
   suggestionContent: {
     flex: 1,

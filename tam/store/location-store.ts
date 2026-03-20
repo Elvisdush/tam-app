@@ -361,11 +361,15 @@ export const useLocationStore = create<LocationState>()(
               ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} min`
               : `${durationMinutes} min`;
             
-            const steps = route.legs?.[0]?.steps?.map((step: any) => ({
-              instruction: step.navigationInstruction?.instructions || 'Continue',
+            const steps = route.legs?.[0]?.steps?.map((step: any) => {
+              const instr = step.navigationInstruction?.instructions;
+              const instructionText = typeof instr === 'string' ? instr : (instr?.text ?? 'Continue');
+              return {
+              instruction: instructionText,
               distance: `${(step.distanceMeters / 1000).toFixed(1)} km`,
               duration: `${Math.ceil(parseInt(step.staticDuration?.replace('s', '') || '0') / 60)} min`
-            })) || [
+            };
+            }) || [
               {
                 instruction: `Head toward ${destination.address || 'destination'}`,
                 distance: `${distanceKm} km`,

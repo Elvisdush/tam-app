@@ -1,8 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, View, Platform } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { TrafficLight } from '@/constants/traffic-light-locations';
 
+interface TrafficLightMarker {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  distanceKm?: number;
+  intersection?: string;
+}
 interface Location {
   latitude: number;
   longitude: number;
@@ -13,11 +20,49 @@ interface Location {
 interface RouteData {
   distance: string;
   duration: string;
+  polyline?: string;
   steps: Array<{
     instruction: string;
     distance: string;
     duration: string;
   }>;
+}
+
+/** Decode Google encoded polyline into lat/lng coordinates */
+function decodePolyline(encoded: string): Array<{ latitude: number; longitude: number }> {
+  const points: Array<{ latitude: number; longitude: number }> = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    const dlat = (result & 1) ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    const dlng = (result & 1) ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push({
+      latitude: lat / 1e5,
+      longitude: lng / 1e5,
+    });
+  }
+  return points;
 }
 
 interface NativeMapViewFullProps {
@@ -30,8 +75,8 @@ interface NativeMapViewFullProps {
   currentRoute: RouteData | null;
   isNavigationMode?: boolean;
   onRouteUpdate?: () => void;
-  /** Traffic lights to show on map (nearby) */
-  trafficLights?: Array<TrafficLight & { distanceKm?: number }>;
+  /** Nearby traffic lights to show on map */
+  trafficLights?: TrafficLightMarker[];
 }
 
 export default function NativeMapViewFull({
@@ -46,37 +91,58 @@ export default function NativeMapViewFull({
   onRouteUpdate,
   trafficLights = [],
 }: NativeMapViewFullProps) {
+  const mapRef = useRef<MapView>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Array<{latitude: number; longitude: number}>>([]);
   const [userHeading, setUserHeading] = useState<number>(0);
+  const hasCenteredOnUser = useRef(false);
+
+  // Center map on user location when it first loads (no destination)
+  useEffect(() => {
+    if (currentLocation && !showLocation && !hasCenteredOnUser.current) {
+      hasCenteredOnUser.current = true;
+      mapRef.current?.animateToRegion({
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: 0.018,
+        longitudeDelta: 0.018,
+      }, 500);
+    }
+  }, [currentLocation, showLocation]);
 
   useEffect(() => {
-    if (showDirections && currentLocation && sharedLat && sharedLng) {
-      const updateRoute = () => {
-        const coords = [
-          {
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-          },
-          {
-            latitude: sharedLat,
-            longitude: sharedLng,
-          },
-        ];
-        setRouteCoordinates(coords);
-        if (onRouteUpdate) {
-          onRouteUpdate();
-        }
-      };
-
-      updateRoute();
-      const interval = setInterval(updateRoute, 3000);
-
-      return () => clearInterval(interval);
+    if (!showDirections) {
+      setRouteCoordinates([]);
+      return;
     }
-  }, [showDirections, currentLocation, sharedLat, sharedLng, onRouteUpdate]);
+    if (currentLocation && sharedLat != null && sharedLng != null) {
+      let coords: Array<{ latitude: number; longitude: number }>;
+      if (currentRoute?.polyline && currentRoute.polyline !== 'simulated_polyline_data') {
+        try {
+          coords = decodePolyline(currentRoute.polyline);
+        } catch {
+          coords = [
+            { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+            { latitude: sharedLat, longitude: sharedLng },
+          ];
+        }
+      } else {
+        coords = [
+          { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+          { latitude: sharedLat, longitude: sharedLng },
+        ];
+      }
+      setRouteCoordinates(coords);
+      if (onRouteUpdate) onRouteUpdate();
+      mapRef.current?.fitToCoordinates(coords, {
+        edgePadding: { top: 80, right: 50, bottom: 80, left: 50 },
+        animated: true,
+      });
+    }
+  }, [showDirections, currentLocation, sharedLat, sharedLng, currentRoute?.polyline, onRouteUpdate]);
 
   return (
     <MapView
+      ref={mapRef}
       style={styles.map}
       {...(Platform.OS === 'web' && { googleMapsApiKey: 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U' })}
       region={{
@@ -163,6 +229,7 @@ export default function NativeMapViewFull({
           key={tl.id}
           coordinate={{ latitude: tl.latitude, longitude: tl.longitude }}
           title={`Traffic light - ${tl.name}`}
+          description={tl.intersection ? String(tl.intersection) : undefined}
           anchor={{ x: 0.5, y: 0.5 }}
         >
           <View style={styles.trafficLightMarker}>
