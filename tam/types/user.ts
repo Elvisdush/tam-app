@@ -7,4 +7,6 @@ export interface User {
   profileImage: string;
   vehicleImage?: string;
   type: 'driver' | 'passenger';
+  /** Driver vehicle — used for “nearby taxi” counts when the driver is online */
+  vehicleType?: 'car' | 'motorbike';
 }

@@ -6,6 +6,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import * as Localization from 'expo-localization';
+import { fetchBigDataCloudReverseGeo } from '@/lib/reverse-geocode-net';
 import { useRideStore } from '@/store/ride-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useLocationStore } from '@/store/location-store';
@@ -46,27 +47,29 @@ export default function PostRideScreen() {
         
         if (status === 'granted') {
           const location = await Location.getCurrentPositionAsync({});
-          const geocode = await Location.reverseGeocodeAsync({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          });
-          
-          if (geocode.length > 0) {
-            const country = geocode[0].country;
-            
-            if (country === 'Rwanda') {
-              setPricePlaceholder('Price (RWF)');
-            } else {
-              const locale = Localization.getLocales()[0];
-              const currencyCode = locale?.currencyCode || '';
-              if (currencyCode) {
-                setPricePlaceholder(`Price (${currencyCode})`);
-              } else {
-                setPricePlaceholder('Price');
-              }
-            }
+          const { latitude, longitude } = location.coords;
+
+          let countryRwanda = false;
+          if (Platform.OS === 'android') {
+            const geo = await fetchBigDataCloudReverseGeo(latitude, longitude);
+            const code = geo?.countryCode?.toUpperCase();
+            const name = geo?.countryName?.toLowerCase();
+            countryRwanda = code === 'RW' || name === 'rwanda';
           } else {
-            setPricePlaceholder('Price');
+            const geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
+            countryRwanda = geocode.length > 0 && geocode[0].country === 'Rwanda';
+          }
+
+          if (countryRwanda) {
+            setPricePlaceholder('Price (RWF)');
+          } else {
+            const locale = Localization.getLocales()[0];
+            const currencyCode = locale?.currencyCode || '';
+            if (currencyCode) {
+              setPricePlaceholder(`Price (${currencyCode})`);
+            } else {
+              setPricePlaceholder('Price');
+            }
           }
         } else {
           const locale = Localization.getLocales()[0];

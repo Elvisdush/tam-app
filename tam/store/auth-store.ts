@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ref, set as firebaseSet, get as firebaseGet, update as firebaseUpdate, onValue } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { User } from '@/types/user';
+import { useOnlineDriversStore } from '@/store/online-drivers-store';
 
 interface AuthState {
   user: User | null;
@@ -95,6 +96,10 @@ export const useAuthStore = create<AuthState>()(
       },
       
       logout: () => {
+        const u = get().user;
+        if (u?.type === 'driver') {
+          void useOnlineDriversStore.getState().clearMyPresence(u.id);
+        }
         set({ user: null, isAuthenticated: false });
       },
     }),

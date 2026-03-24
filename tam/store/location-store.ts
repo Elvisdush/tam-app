@@ -3,9 +3,73 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
+import { fetchBigDataCloudReverseGeo, formatAddressLineFromBdc } from '@/lib/reverse-geocode-net';
+import { fetchOsrmDrivingRoute } from '@/lib/osrm-route';
 
 /** Native watch subscription — must be removed to avoid duplicate watches and permission errors */
 let nativeLocationSubscription: Location.LocationSubscription | null = null;
+
+/** After one failed system geocoder call, skip it (watch fires often; avoids repeated UNAVAILABLE work). */
+let nativeSystemGeocoderUnavailable = false;
+
+let lastNetworkGeocodeAt = 0;
+let lastNetworkAddress: string | undefined;
+const NETWORK_REVERSE_GEOCODE_MIN_MS = 45_000;
+
+/**
+ * Human-readable place line for current coordinates.
+ * Android: skip Expo reverseGeocodeAsync entirely — the system Geocoder often returns UNAVAILABLE and Expo still logs native rejections.
+ * iOS: try system geocoder first, then HTTP fallback.
+ */
+async function reverseGeocodeAddress(latitude: number, longitude: number): Promise<string | undefined> {
+  const useIosSystemGeocoder = Platform.OS === 'ios';
+
+  if (useIosSystemGeocoder && !nativeSystemGeocoderUnavailable) {
+    try {
+      const results = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const address = results[0];
+      if (address) {
+        const line = `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim();
+        if (line) return line;
+      }
+    } catch {
+      nativeSystemGeocoderUnavailable = true;
+    }
+  }
+
+  const now = Date.now();
+  if (
+    now - lastNetworkGeocodeAt < NETWORK_REVERSE_GEOCODE_MIN_MS &&
+    lastNetworkAddress !== undefined
+  ) {
+    return lastNetworkAddress;
+  }
+
+  const data = await fetchBigDataCloudReverseGeo(latitude, longitude);
+  if (data) {
+    const line = formatAddressLineFromBdc(data);
+    if (line) {
+      lastNetworkGeocodeAt = now;
+      lastNetworkAddress = line;
+      return line;
+    }
+  }
+
+  const coords = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+  lastNetworkGeocodeAt = now;
+  lastNetworkAddress = coords;
+  return coords;
+}
+
+function parseGoogleDurationSeconds(duration: unknown): number {
+  if (typeof duration === 'string') {
+    return parseInt(duration.replace(/s$/i, ''), 10) || 0;
+  }
+  if (duration && typeof duration === 'object' && 'seconds' in duration) {
+    return parseInt(String((duration as { seconds: string }).seconds), 10) || 0;
+  }
+  return 0;
+}
 
 const calculateDistanceHelper = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371;
@@ -153,19 +217,8 @@ export const useLocationStore = create<LocationState>()(
               timestamp: new Date().toISOString()
             };
             
-            // Try to get address
-            try {
-              const [address] = await Location.reverseGeocodeAsync({
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              });
-              
-              if (address) {
-                locationData.address = `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim();
-              }
-            } catch (error) {
-              console.log('Reverse geocoding failed:', error);
-            }
+            const addr = await reverseGeocodeAddress(location.coords.latitude, location.coords.longitude);
+            if (addr) locationData.address = addr;
             
             set({ currentLocation: locationData });
             return locationData;
@@ -251,19 +304,11 @@ export const useLocationStore = create<LocationState>()(
                   timestamp: new Date().toISOString()
                 };
                 
-                // Try to get address for mobile tracking
-                try {
-                  const [address] = await Location.reverseGeocodeAsync({
-                    latitude: location.coords.latitude,
-                    longitude: location.coords.longitude,
-                  });
-                  
-                  if (address) {
-                    locationData.address = `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim();
-                  }
-                } catch (error) {
-                  console.log('Mobile reverse geocoding failed:', error);
-                }
+                const addr = await reverseGeocodeAddress(
+                  location.coords.latitude,
+                  location.coords.longitude
+                );
+                if (addr) locationData.address = addr;
                 
                 set({ currentLocation: locationData });
               }
@@ -329,119 +374,20 @@ export const useLocationStore = create<LocationState>()(
       
       calculateRoute: async (origin: LocationData, destination: LocationData) => {
         set({ isCalculatingRoute: true });
-        
-        try {
-          const apiKey = 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U';
-          const url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-          
-          const requestBody = {
-            origin: {
-              location: {
-                latLng: {
-                  latitude: origin.latitude,
-                  longitude: origin.longitude
-                }
-              }
-            },
-            destination: {
-              location: {
-                latLng: {
-                  latitude: destination.latitude,
-                  longitude: destination.longitude
-                }
-              }
-            },
-            travelMode: 'DRIVE',
-            routingPreference: 'TRAFFIC_AWARE',
-            computeAlternativeRoutes: false,
-            routeModifiers: {
-              avoidTolls: false,
-              avoidHighways: false,
-              avoidFerries: false
-            },
-            languageCode: 'en-US',
-            units: 'METRIC'
-          };
-          
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Goog-Api-Key': apiKey,
-              'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration'
-            },
-            body: JSON.stringify(requestBody)
-          });
-          
-          const data = await response.json();
-          
-          if (data.routes && data.routes.length > 0) {
-            const route = data.routes[0];
-            const distanceKm = (route.distanceMeters / 1000).toFixed(1);
-            const durationSeconds = parseInt(route.duration.replace('s', ''));
-            const durationMinutes = Math.ceil(durationSeconds / 60);
-            const durationText = durationMinutes >= 60 
-              ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} min`
-              : `${durationMinutes} min`;
-            
-            const steps = route.legs?.[0]?.steps?.map((step: any) => {
-              const instr = step.navigationInstruction?.instructions;
-              const instructionText = typeof instr === 'string' ? instr : (instr?.text ?? 'Continue');
-              return {
-              instruction: instructionText,
-              distance: `${(step.distanceMeters / 1000).toFixed(1)} km`,
-              duration: `${Math.ceil(parseInt(step.staticDuration?.replace('s', '') || '0') / 60)} min`
-            };
-            }) || [
-              {
-                instruction: `Head toward ${destination.address || 'destination'}`,
-                distance: `${distanceKm} km`,
-                duration: durationText
-              }
-            ];
-            
-            const routeData: RouteData = {
-              distance: `${distanceKm} km`,
-              duration: durationText,
-              polyline: route.polyline?.encodedPolyline || '',
-              steps: steps
-            };
-            
-            set({ currentRoute: routeData, isCalculatingRoute: false });
-            return routeData;
-          } else {
-            const distanceKm = calculateDistanceHelper(origin.latitude, origin.longitude, destination.latitude, destination.longitude).toFixed(1);
-            const durationMinutes = Math.ceil((parseFloat(distanceKm) / 40) * 60);
-            const durationText = durationMinutes >= 60 
-              ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} min`
-              : `${durationMinutes} min`;
-            
-            const simulatedRoute: RouteData = {
-              distance: `${distanceKm} km`,
-              duration: durationText,
-              polyline: 'simulated_polyline_data',
-              steps: [
-                {
-                  instruction: `Head toward ${destination.address || 'destination'}`,
-                  distance: `${distanceKm} km`,
-                  duration: durationText
-                }
-              ]
-            };
-            
-            set({ currentRoute: simulatedRoute, isCalculatingRoute: false });
-            return simulatedRoute;
-          }
-        } catch (error) {
-          console.log('Route calculation error:', error);
-          
-          const distanceKm = calculateDistanceHelper(origin.latitude, origin.longitude, destination.latitude, destination.longitude).toFixed(1);
+
+        const buildStraightLineFallback = (): RouteData => {
+          const distanceKm = calculateDistanceHelper(
+            origin.latitude,
+            origin.longitude,
+            destination.latitude,
+            destination.longitude
+          ).toFixed(1);
           const durationMinutes = Math.ceil((parseFloat(distanceKm) / 40) * 60);
-          const durationText = durationMinutes >= 60 
-            ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} min`
-            : `${durationMinutes} min`;
-          
-          const simulatedRoute: RouteData = {
+          const durationText =
+            durationMinutes >= 60
+              ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} min`
+              : `${durationMinutes} min`;
+          return {
             distance: `${distanceKm} km`,
             duration: durationText,
             polyline: 'simulated_polyline_data',
@@ -449,13 +395,156 @@ export const useLocationStore = create<LocationState>()(
               {
                 instruction: `Head toward ${destination.address || 'destination'}`,
                 distance: `${distanceKm} km`,
-                duration: durationText
-              }
-            ]
+                duration: durationText,
+              },
+            ],
           };
-          
-          set({ currentRoute: simulatedRoute, isCalculatingRoute: false });
-          return simulatedRoute;
+        };
+
+        const applyOsrmIfPossible = async (): Promise<RouteData | null> => {
+          const osrm = await fetchOsrmDrivingRoute(
+            origin.latitude,
+            origin.longitude,
+            destination.latitude,
+            destination.longitude
+          );
+          if (!osrm?.encodedPolyline) return null;
+          return {
+            distance: osrm.distanceLabel,
+            duration: osrm.durationText,
+            polyline: osrm.encodedPolyline,
+            steps: osrm.steps,
+          };
+        };
+
+        try {
+          const apiKey = 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U';
+          const url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+
+          const requestBody = {
+            origin: {
+              location: {
+                latLng: {
+                  latitude: origin.latitude,
+                  longitude: origin.longitude,
+                },
+              },
+            },
+            destination: {
+              location: {
+                latLng: {
+                  latitude: destination.latitude,
+                  longitude: destination.longitude,
+                },
+              },
+            },
+            travelMode: 'DRIVE',
+            routingPreference: 'TRAFFIC_AWARE',
+            polylineQuality: 'HIGH_QUALITY',
+            computeAlternativeRoutes: false,
+            routeModifiers: {
+              avoidTolls: false,
+              avoidHighways: false,
+              avoidFerries: false,
+            },
+            languageCode: 'en-US',
+            units: 'METRIC',
+          };
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': apiKey,
+              'X-Goog-FieldMask':
+                'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration',
+            },
+            body: JSON.stringify(requestBody),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || (data as { error?: unknown }).error) {
+            if (__DEV__) {
+              console.warn(
+                'Routes API did not return OK:',
+                !response.ok ? response.status : '',
+                (data as { error?: unknown }).error ?? data
+              );
+            }
+            const osrm = await applyOsrmIfPossible();
+            const routeData = osrm ?? buildStraightLineFallback();
+            set({ currentRoute: routeData, isCalculatingRoute: false });
+            return routeData;
+          }
+
+          if (data.routes && data.routes.length > 0) {
+            const route = data.routes[0] as {
+              distanceMeters?: number;
+              duration?: string;
+              polyline?: { encodedPolyline?: string };
+            };
+            const distanceKm = ((route.distanceMeters ?? 0) / 1000).toFixed(1);
+            const durationSeconds = parseGoogleDurationSeconds(route.duration);
+            const durationMinutes = Math.ceil(durationSeconds / 60);
+            const durationText =
+              durationMinutes >= 60
+                ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} min`
+                : `${durationMinutes} min`;
+
+            const steps =
+              (route as { legs?: { steps?: any[] }[] }).legs?.[0]?.steps?.map((step: any) => {
+                const instr = step.navigationInstruction?.instructions;
+                const instructionText =
+                  typeof instr === 'string' ? instr : (instr?.text ?? 'Continue');
+                return {
+                  instruction: instructionText,
+                  distance: `${((step.distanceMeters ?? 0) / 1000).toFixed(1)} km`,
+                  duration: `${Math.ceil(parseInt(String(step.staticDuration ?? '0s').replace(/s$/i, ''), 10) / 60)} min`,
+                };
+              }) ?? [];
+
+            const encoded =
+              route.polyline?.encodedPolyline?.trim() ||
+              (route.polyline as { encoded_polyline?: string } | undefined)?.encoded_polyline?.trim();
+
+            if (!encoded) {
+              const osrm = await applyOsrmIfPossible();
+              const routeData = osrm ?? buildStraightLineFallback();
+              set({ currentRoute: routeData, isCalculatingRoute: false });
+              return routeData;
+            }
+
+            const routeData: RouteData = {
+              distance: `${distanceKm} km`,
+              duration: durationText,
+              polyline: encoded,
+              steps:
+                steps.length > 0
+                  ? steps
+                  : [
+                      {
+                        instruction: `Head toward ${destination.address || 'destination'}`,
+                        distance: `${distanceKm} km`,
+                        duration: durationText,
+                      },
+                    ],
+            };
+
+            set({ currentRoute: routeData, isCalculatingRoute: false });
+            return routeData;
+          }
+
+          const osrm = await applyOsrmIfPossible();
+          const routeData = osrm ?? buildStraightLineFallback();
+          set({ currentRoute: routeData, isCalculatingRoute: false });
+          return routeData;
+        } catch (error) {
+          console.log('Route calculation error:', error);
+          const osrm = await applyOsrmIfPossible();
+          const routeData = osrm ?? buildStraightLineFallback();
+          set({ currentRoute: routeData, isCalculatingRoute: false });
+          return routeData;
         }
       },
       

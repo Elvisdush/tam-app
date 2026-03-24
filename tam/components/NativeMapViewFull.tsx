@@ -236,6 +236,10 @@ export default function NativeMapViewFull({
           coordinates={routeCoordinates}
           strokeColor="#33ccff"
           strokeWidth={isNavigationMode ? 7 : 6}
+          lineCap="round"
+          lineJoin="round"
+          zIndex={2}
+          geodesic={false}
         />
       )}
       {trafficLights.map((tl) => (

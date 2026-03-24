@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet, Platform, View, Text } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import type { OnlineDriverMarker } from '@/types/online-driver';
 
 interface Location {
   latitude: number;
@@ -11,9 +12,11 @@ interface Location {
 
 interface NativeMapViewProps {
   currentLocation: Location | null;
+  /** Drivers using the app nearby (real + optional demo) */
+  nearbyDrivers?: OnlineDriverMarker[];
 }
 
-export default function NativeMapView({ currentLocation }: NativeMapViewProps) {
+export default function NativeMapView({ currentLocation, nearbyDrivers = [] }: NativeMapViewProps) {
   return (
     <MapView
       style={styles.map}
@@ -21,8 +24,8 @@ export default function NativeMapView({ currentLocation }: NativeMapViewProps) {
       region={{
         latitude: currentLocation?.latitude || -1.9441,
         longitude: currentLocation?.longitude || 30.0619,
-        latitudeDelta: 0.018,
-        longitudeDelta: 0.018,
+        latitudeDelta: 0.045,
+        longitudeDelta: 0.045,
       }}
       customMapStyle={[
         {
@@ -49,9 +52,27 @@ export default function NativeMapView({ currentLocation }: NativeMapViewProps) {
             latitude: currentLocation.latitude,
             longitude: currentLocation.longitude,
           }}
-          title="Your Location"
+          title="You"
+          pinColor="#3182ce"
         />
       )}
+      {nearbyDrivers.map((d) => (
+        <Marker
+          key={d.userId}
+          coordinate={{ latitude: d.latitude, longitude: d.longitude }}
+          title={d.transportType === 'motorbike' ? 'Taxi moto' : 'Taxi car'}
+          description={d.isDemo ? `${d.username ?? 'Demo'} · test` : d.username ?? 'Driver'}
+        >
+          <View
+            style={[
+              styles.driverPin,
+              d.transportType === 'car' ? styles.driverPinCar : styles.driverPinMoto,
+            ]}
+          >
+            <Text style={styles.driverPinText}>{d.transportType === 'motorbike' ? 'M' : 'C'}</Text>
+          </View>
+        </Marker>
+      ))}
     </MapView>
   );
 }
@@ -60,5 +81,30 @@ const styles = StyleSheet.create({
   map: {
     width: '100%',
     height: '100%',
+  },
+  driverPin: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 2,
+    elevation: 4,
+  },
+  driverPinMoto: {
+    backgroundColor: '#ea580c',
+  },
+  driverPinCar: {
+    backgroundColor: '#16a34a',
+  },
+  driverPinText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

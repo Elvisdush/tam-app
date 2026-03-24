@@ -1,10 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { StyleSheet, View, Text, Platform } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Car, User, MapPin } from 'lucide-react-native';
 import { Ride, LiveLocation } from '@/types/ride';
-import { useLocationStore } from '@/store/location-store';
-import { useAuthStore } from '@/store/auth-store';
 
 interface RideTrackingMapProps {
   ride: Ride;
@@ -25,9 +23,6 @@ export default function RideTrackingMap({
   routeToPickup,
   routeToDropoff,
 }: RideTrackingMapProps) {
-  const user = useAuthStore((s) => s.user);
-  const isDriver = user?.type === 'driver';
-
   const driverPos = driverLocation ?? ride.driverLocation;
   const passengerPos = passengerLocation ?? ride.passengerLocation;
 
@@ -53,6 +48,9 @@ export default function RideTrackingMap({
           longitude: allPoints.reduce((s, p) => s + p.longitude, 0) / allPoints.length,
         }
       : KIGALI_CENTER;
+
+  const pickupPos = ride.pickupLocation;
+  const dropoffPos = ride.dropoffLocation;
 
   return (
     <View style={styles.container}>
