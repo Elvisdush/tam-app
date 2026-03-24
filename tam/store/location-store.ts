@@ -4,6 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 
+/** Native watch subscription — must be removed to avoid duplicate watches and permission errors */
+let nativeLocationSubscription: Location.LocationSubscription | null = null;
+
 const calculateDistanceHelper = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -174,14 +177,30 @@ export const useLocationStore = create<LocationState>()(
       },
       
       startLocationTracking: async () => {
-        const { locationPermission } = get();
-        if (!locationPermission) {
-          const granted = await get().requestLocationPermission();
-          if (!granted) return;
+        if (Platform.OS !== 'web') {
+          const existing = await Location.getForegroundPermissionsAsync();
+          let granted = existing.status === 'granted';
+          if (!granted) {
+            const req = await Location.requestForegroundPermissionsAsync();
+            granted = req.status === 'granted';
+          }
+          set({ locationPermission: granted });
+          if (!granted) {
+            return;
+          }
+          if (nativeLocationSubscription) {
+            return;
+          }
+        } else {
+          const { locationPermission } = get();
+          if (!locationPermission) {
+            const ok = await get().requestLocationPermission();
+            if (!ok) return;
+          }
         }
-        
+
         set({ isTrackingLocation: true });
-        
+
         if (Platform.OS === 'web') {
           const watchId = navigator.geolocation.watchPosition(
             async (position) => {
@@ -219,7 +238,7 @@ export const useLocationStore = create<LocationState>()(
           (get() as any).webWatchId = watchId;
         } else {
           try {
-            await Location.watchPositionAsync(
+            nativeLocationSubscription = await Location.watchPositionAsync(
               {
                 accuracy: Location.Accuracy.High,
                 timeInterval: 5000,
@@ -251,7 +270,8 @@ export const useLocationStore = create<LocationState>()(
             );
           } catch (error) {
             console.log('Location tracking error:', error);
-            set({ isTrackingLocation: false });
+            set({ isTrackingLocation: false, locationPermission: false });
+            nativeLocationSubscription = null;
           }
         }
       },
@@ -264,6 +284,9 @@ export const useLocationStore = create<LocationState>()(
           if (watchId) {
             navigator.geolocation.clearWatch(watchId);
           }
+        } else {
+          nativeLocationSubscription?.remove();
+          nativeLocationSubscription = null;
         }
       },
       
@@ -453,11 +476,10 @@ export const useLocationStore = create<LocationState>()(
       },
     }),
     {
-      name: 'location-storage',
+      name: 'location-storage-v2',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         sharedLocations: state.sharedLocations,
-        locationPermission: state.locationPermission,
         currentRoute: state.currentRoute,
       }),
     }

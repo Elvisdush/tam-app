@@ -1,22 +1,18 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Keyboard, TouchableWithoutFeedback, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Navigation, MapPin, Route, Clock, ArrowRight, X, Search, AlertCircle } from 'lucide-react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useLocationStore } from '@/store/location-store';
 import { useAuthStore } from '@/store/auth-store';
 import NativeMapViewFull from '@/components/NativeMapViewFull';
+import NextManeuverBar from '@/components/navigation/NextManeuverBar';
 import { getNearbyTrafficLights } from '@/constants/traffic-light-locations';
-interface LocationSuggestion {
-  name: string;
-  address: string;
-  distance: string;
-  time: string;
-  latitude: number;
-  longitude: number;
-}
-
-const GOOGLE_MAPS_API_KEY = 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U';
+import { getNavigationGuidance } from '@/lib/navigation/guidance';
+import { useNavigationPose } from '@/hooks/useNavigationPose';
+import { buildRwandaSuggestions } from '@/lib/rwanda-destination-search';
+import type { LocationSuggestion } from '@/lib/places-search';
 
 /** Safely get string from route params (can be string | string[] | undefined) */
 function safeParam(p: string | string[] | undefined): string {
@@ -24,6 +20,8 @@ function safeParam(p: string | string[] | undefined): string {
 }
 
 export default function MapScreen() {
+  const insets = useSafeAreaInsets();
+  const searchInputRef = useRef<TextInput>(null);
   const params = useLocalSearchParams();
   const { showLocation, latitude, longitude, senderId, address } = params;
   const addressStr = safeParam(address);
@@ -31,20 +29,39 @@ export default function MapScreen() {
   const [showRouteDetails, setShowRouteDetails] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [selectedDestination, setSelectedDestination] = useState<{ latitude: number; longitude: number; address: string } | null>(null);
   const [isNavigationMode, setIsNavigationMode] = useState(false);
-  
-  const { 
-    currentLocation, 
-    startLocationTracking, 
-    currentRoute, 
+
+  const {
+    currentLocation,
+    startLocationTracking,
+    currentRoute,
     isCalculatingRoute,
     calculateRoute,
     clearRoute
   } = useLocationStore();
+
+  const suggestions = useMemo(
+    () =>
+      buildRwandaSuggestions(
+        searchText,
+        currentLocation?.latitude ?? null,
+        currentLocation?.longitude ?? null
+      ),
+    [searchText, currentLocation?.latitude, currentLocation?.longitude]
+  );
+
   const user = useAuthStore(state => state.user);
+  const { heading: navHeading } = useNavigationPose(isNavigationMode);
+  const navigationGuidance = useMemo(() => {
+    if (!isNavigationMode || !currentLocation || !currentRoute?.steps?.length) return null;
+    return getNavigationGuidance(
+      currentLocation.latitude,
+      currentLocation.longitude,
+      currentRoute.polyline,
+      currentRoute.steps
+    );
+  }, [isNavigationMode, currentLocation, currentRoute]);
   
   const sharedLat = latitude ? parseFloat(latitude as string) : null;
   const sharedLng = longitude ? parseFloat(longitude as string) : null;
@@ -54,34 +71,35 @@ export default function MapScreen() {
     : [];
   
   useEffect(() => {
-    const trackLocation = async () => {
-      await startLocationTracking();
-    };
-    trackLocation();
-    
-    if (showLocation === 'true' && sharedLat && sharedLng && currentLocation) {
-      const destination = {
-        latitude: sharedLat,
-        longitude: sharedLng,
-        timestamp: new Date().toISOString(),
-        address: addressStr
-      };
-      
-      calculateRoute(currentLocation, destination).then((route) => {
-        if (route) {
-          setShowDirections(true);
-        }
-      });
-      
-      const interval = setInterval(() => {
-        if (currentLocation) {
-          calculateRoute(currentLocation, destination);
-        }
-      }, 3000);
-      
-      return () => clearInterval(interval);
+    startLocationTracking();
+  }, [startLocationTracking]);
+
+  useEffect(() => {
+    if (showLocation !== 'true' || !sharedLat || !sharedLng || !currentLocation) {
+      return;
     }
-  }, [showLocation, sharedLat, sharedLng, currentLocation, addressStr, calculateRoute, startLocationTracking]);
+    const destination = {
+      latitude: sharedLat,
+      longitude: sharedLng,
+      timestamp: new Date().toISOString(),
+      address: addressStr
+    };
+
+    calculateRoute(currentLocation, destination).then((route) => {
+      if (route) {
+        setShowDirections(true);
+      }
+    });
+
+    const interval = setInterval(() => {
+      const loc = useLocationStore.getState().currentLocation;
+      if (loc) {
+        calculateRoute(loc, destination);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [showLocation, sharedLat, sharedLng, currentLocation, addressStr, calculateRoute]);
   
   useEffect(() => {
     return () => {
@@ -91,167 +109,8 @@ export default function MapScreen() {
     };
   }, [showLocation, clearRoute]);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
-
-  useEffect(() => {
-    if (searchText.length < 3) {
-      setSuggestions([]);
-      setHasSearched(false);
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-      return;
-    }
-    if (!currentLocation) {
-      setSuggestions([]);
-      setHasSearched(true);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      debounceRef.current = null;
-      fetchLocationSuggestions(searchText);
-      setHasSearched(true);
-    }, 350);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [searchText, currentLocation]);
-
-  const fetchLocationSuggestions = async (query: string) => {
-    if (!currentLocation) return;
-
-    setIsLoadingSuggestions(true);
-    try {
-      // Places API (New) - Autocomplete
-      const autocompleteResponse = await fetch(
-        'https://places.googleapis.com/v1/places:autocomplete',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-            'X-Goog-FieldMask': 'suggestions.placePrediction.place,suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.mainText',
-          },
-          body: JSON.stringify({
-            input: query,
-            locationBias: {
-              circle: {
-                center: {
-                  latitude: currentLocation.latitude,
-                  longitude: currentLocation.longitude,
-                },
-                radius: 50000.0,
-              },
-            },
-          }),
-        }
-      );
-
-      const autocompleteData = await autocompleteResponse.json();
-
-      if (!autocompleteData.suggestions || autocompleteData.suggestions.length === 0) {
-        setSuggestions([]);
-        return;
-      }
-
-      const placePredictions = autocompleteData.suggestions.filter(
-        (s: any) => s.placePrediction && s.placePrediction.place
-      );
-
-      if (placePredictions.length === 0) {
-        setSuggestions([]);
-        return;
-      }
-
-      const suggestionsWithDetails = await Promise.all(
-        placePredictions.slice(0, 5).map(async (item: any) => {
-          try {
-            const pred = item.placePrediction;
-            const placeResource = pred.place; // "places/ChIJ..."
-            const placeId = placeResource.startsWith('places/') ? placeResource.slice(7) : placeResource;
-
-            // Place Details (New) - GET
-            const detailsResponse = await fetch(
-              `https://places.googleapis.com/v1/places/${placeId}`,
-              {
-                headers: {
-                  'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-                  'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,viewport',
-                },
-              }
-            );
-
-            const placeDetails = await detailsResponse.json();
-
-            let destLat: number | null = null;
-            let destLng: number | null = null;
-
-            if (placeDetails.location) {
-              destLat = placeDetails.location.latitude ?? placeDetails.location.lat ?? null;
-              destLng = placeDetails.location.longitude ?? placeDetails.location.lng ?? null;
-            }
-            if ((destLat == null || destLng == null) && placeDetails.viewport) {
-              const v = placeDetails.viewport;
-              const low = v.low ?? v.southwest;
-              const high = v.high ?? v.northeast;
-              if (low && high) {
-                destLat = (low.latitude + high.latitude) / 2;
-                destLng = (low.longitude + high.longitude) / 2;
-              }
-            }
-            if (destLat == null || destLng == null) return null;
-
-            const distance = calculateDistance(
-              currentLocation.latitude,
-              currentLocation.longitude,
-              destLat,
-              destLng
-            );
-            const time = Math.ceil((distance / 40) * 60);
-            const name = placeDetails.displayName?.text ?? pred.mainText?.text ?? pred.text?.text ?? 'Place';
-            const address = placeDetails.formattedAddress ?? pred.text?.text ?? '';
-
-            return {
-              name,
-              address,
-              distance: `${distance.toFixed(1)} km`,
-              time: `${time} min`,
-              latitude: destLat,
-              longitude: destLng,
-            };
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      setSuggestions(suggestionsWithDetails.filter((s): s is LocationSuggestion => s !== null));
-    } catch (error) {
-      console.error('Error fetching suggestions:', error);
-      setSuggestions([]);
-    } finally {
-      setIsLoadingSuggestions(false);
-    }
-  };
-
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
   const handleSelectLocation = async (suggestion: LocationSuggestion) => {
     setSearchText(suggestion.name);
-    setSuggestions([]);
     setIsFocused(false);
     Keyboard.dismiss();
     
@@ -260,7 +119,7 @@ export default function MapScreen() {
         latitude: suggestion.latitude,
         longitude: suggestion.longitude,
         timestamp: new Date().toISOString(),
-        address: suggestion.address
+        address: `${suggestion.name} · ${suggestion.address}`,
       };
       
       setSelectedDestination(destination);
@@ -278,6 +137,16 @@ export default function MapScreen() {
     if (suggestions.length > 0) {
       handleSelectLocation(suggestions[0]);
     }
+  };
+
+  const dismissSearchOverlay = () => {
+    Keyboard.dismiss();
+    setIsFocused(false);
+  };
+
+  const clearSearchText = () => {
+    setSearchText('');
+    searchInputRef.current?.focus();
   };
   
   const handleGetDirections = async () => {
@@ -313,6 +182,11 @@ export default function MapScreen() {
     setShowRouteDetails(false);
   };
 
+  const handleExitNavigation = () => {
+    setIsNavigationMode(false);
+    setShowRouteDetails(false);
+  };
+
   const handleReport = () => {
     Alert.alert(
       'Report',
@@ -338,15 +212,16 @@ export default function MapScreen() {
     return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
   
+  const searchTop = Math.max(insets.top, 8) + 8;
+  const suggestionsTop = searchTop + 56;
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <TouchableWithoutFeedback onPress={() => {
-        Keyboard.dismiss();
-        setIsFocused(false);
-      }}>
-        <View style={styles.mapContainer}>
-          <NativeMapViewFull
+      <View style={styles.mapContainer}>
+        <TouchableWithoutFeedback onPress={dismissSearchOverlay} accessible={false}>
+          <View style={styles.mapTouchLayer}>
+            <NativeMapViewFull
             currentLocation={currentLocation}
             sharedLat={selectedDestination?.latitude || sharedLat}
             sharedLng={selectedDestination?.longitude || sharedLng}
@@ -355,9 +230,13 @@ export default function MapScreen() {
             showDirections={showDirections}
             currentRoute={currentRoute}
             isNavigationMode={isNavigationMode}
+            userHeading={navHeading}
+            satelliteMode={isNavigationMode}
             trafficLights={nearbyTrafficLights}
           />
-        
+          </View>
+        </TouchableWithoutFeedback>
+
         {showLocation === 'true' && sharedLat && sharedLng && (
           <View style={styles.locationInfoPanel}>
             <View style={styles.locationHeader}>
@@ -412,52 +291,95 @@ export default function MapScreen() {
           </View>
         )}
         
-        {/* Waze-style top search bar */}
-        <View style={styles.topSearchBar}>
+        {/* Waze-style top search bar (hidden during navigation) */}
+        {!isNavigationMode && (
+        <View style={[styles.topSearchBar, { top: searchTop }]}>
+          <View style={styles.searchLeadingIcon}>
+            <Search color="#9ca3af" size={20} />
+          </View>
           <TextInput
+            ref={searchInputRef}
             style={styles.wazeSearchInput}
-            placeholder="Where to?"
+            placeholder="Search districts & cities"
             placeholderTextColor="#999"
             value={searchText}
             onChangeText={setSearchText}
             onFocus={() => setIsFocused(true)}
+            returnKeyType="search"
+            onSubmitEditing={handleSearch}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode={Platform.OS === 'ios' ? 'while-editing' : 'never'}
           />
+          {searchText.length > 0 && Platform.OS !== 'ios' && (
+            <TouchableOpacity onPress={clearSearchText} style={styles.clearSearchBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X color="#9ca3af" size={20} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.wazeSearchButton} onPress={handleSearch}>
             <Search color="white" size={20} />
           </TouchableOpacity>
         </View>
+        )}
 
-        {isFocused && (
-          <View style={styles.wazeSuggestionsPanel}>
-            <ScrollView style={styles.suggestionsList}>
-              {isLoadingSuggestions ? (
-                <View style={styles.suggestionEmptyState}>
-                  <ActivityIndicator size="small" color="#33ccff" />
-                  <Text style={styles.suggestionEmptyText}>Searching places...</Text>
-                </View>
-              ) : suggestions.length > 0 ? (
+        {isNavigationMode && navigationGuidance && (
+          <NextManeuverBar
+            instruction={navigationGuidance.nextInstruction}
+            distanceLabel={navigationGuidance.distanceLabel}
+            onExit={handleExitNavigation}
+          />
+        )}
+
+        {isFocused && !isNavigationMode && (
+          <View style={[styles.wazeSuggestionsPanel, { top: suggestionsTop }]} pointerEvents="box-none">
+            <View style={styles.suggestionsHeader}>
+              <Text style={styles.suggestionsHeaderTitle}>Rwanda destinations</Text>
+              <TouchableOpacity onPress={dismissSearchOverlay} style={styles.suggestionsCloseBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <X color="#64748b" size={22} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={styles.suggestionsList}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={suggestions.length > 4}
+            >
+              {suggestions.length > 0 ? (
                 suggestions.map((suggestion, index) => (
                   <TouchableOpacity
-                    key={`${suggestion.latitude}-${suggestion.longitude}-${index}`}
-                    style={styles.suggestionItem}
+                    key={suggestion.id ?? `${suggestion.latitude}-${suggestion.longitude}-${index}`}
+                    style={[styles.suggestionItem, index === suggestions.length - 1 && styles.suggestionItemLast]}
                     onPress={() => handleSelectLocation(suggestion)}
+                    activeOpacity={0.65}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${suggestion.name}, ${suggestion.distance}`}
                   >
-                    <MapPin color="#33ccff" size={24} />
-                    <View style={styles.suggestionContent}>
-                      <Text style={styles.suggestionName}>{String(suggestion.name ?? '')}</Text>
-                      <Text style={styles.suggestionAddress}>{String(suggestion.address ?? '')}</Text>
+                    <View style={styles.suggestionIconWrap}>
+                      <MapPin color="#33ccff" size={22} />
                     </View>
-                    <Text style={styles.suggestionDistance}>{String(suggestion.distance ?? '')}</Text>
+                    <View style={styles.suggestionContent}>
+                      <Text style={styles.suggestionName} numberOfLines={1}>
+                        {String(suggestion.name ?? '')}
+                      </Text>
+                      <Text style={styles.suggestionAddress} numberOfLines={2}>
+                        {String(suggestion.address ?? '')}
+                      </Text>
+                    </View>
+                    <View style={styles.suggestionMetaCol}>
+                      <Text style={styles.suggestionDistance}>{String(suggestion.distance ?? '')}</Text>
+                      <View style={styles.suggestionTimeRow}>
+                        <Clock color="#94a3b8" size={12} />
+                        <Text style={styles.suggestionTime}>{String(suggestion.time ?? '')}</Text>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 ))
               ) : (
                 <View style={styles.suggestionEmptyState}>
                   <Text style={styles.suggestionEmptyText}>
-                    {searchText.length < 3
-                      ? 'Type at least 3 characters to search'
-                      : !currentLocation
-                        ? 'Enable location to search nearby places'
-                        : 'No places found. Try a different search.'}
+                    No matching district or city. Try another spelling or a common name (e.g. Butare, Gisenyi,
+                    Kibuye).
                   </Text>
                 </View>
               )}
@@ -465,8 +387,8 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Waze-style bottom ETA panel */}
-        {(showDirections || selectedDestination) && currentRoute && (
+        {/* Waze-style bottom ETA panel (hidden during navigation) */}
+        {!isNavigationMode && (showDirections || selectedDestination) && currentRoute && (
           <View style={styles.wazeEtaPanel}>
             <View style={styles.wazeEtaMain}>
               <Text style={styles.wazeEtaTime}>{String(getEtaTime())}</Text>
@@ -490,8 +412,12 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Waze-style report button - top right */}
-        <TouchableOpacity style={styles.reportButton} onPress={handleReport} activeOpacity={0.8}>
+        {/* Waze-style report button */}
+        <TouchableOpacity
+          style={[styles.reportButton, isNavigationMode && styles.reportButtonNav]}
+          onPress={handleReport}
+          activeOpacity={0.8}
+        >
           <AlertCircle color="#fff" size={24} />
         </TouchableOpacity>
 
@@ -536,8 +462,7 @@ export default function MapScreen() {
             </View>
           </View>
         )}
-        </View>
-      </TouchableWithoutFeedback>
+      </View>
     </View>
   );
 }
@@ -551,9 +476,11 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
+  mapTouchLayer: {
+    flex: 1,
+  },
   topSearchBar: {
     position: 'absolute',
-    top: 50,
     left: 16,
     right: 16,
     flexDirection: 'row',
@@ -567,6 +494,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 8,
+  },
+  searchLeadingIcon: {
+    marginRight: 8,
+    justifyContent: 'center',
+  },
+  clearSearchBtn: {
+    marginRight: 4,
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   wazeSearchInput: {
     flex: 1,
@@ -584,7 +521,6 @@ const styles = StyleSheet.create({
   },
   wazeSuggestionsPanel: {
     position: 'absolute',
-    top: 115,
     left: 16,
     right: 16,
     maxHeight: 320,
@@ -595,6 +531,46 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 8,
+    overflow: 'hidden',
+  },
+  suggestionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#fafafa',
+  },
+  suggestionsHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: '#0f172a',
+  },
+  suggestionsCloseBtn: {
+    padding: 4,
+  },
+  suggestionIconWrap: {
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  suggestionMetaCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginLeft: 8,
+    minWidth: 56,
+  },
+  suggestionTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  suggestionItemLast: {
+    borderBottomWidth: 0,
   },
   wazeEtaPanel: {
     position: 'absolute',
@@ -677,6 +653,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 8,
+  },
+  reportButtonNav: {
+    bottom: 28,
   },
   mapBackground: {
     flex: 1,
@@ -862,7 +841,8 @@ const styles = StyleSheet.create({
   },
   suggestionContent: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 0,
+    minWidth: 0,
   },
   suggestionName: {
     fontSize: 17,
@@ -879,13 +859,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   suggestionDistance: {
-    fontSize: 16,
-    color: '#000',
-    fontWeight: '400' as const,
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: '#0f172a',
   },
   suggestionTime: {
     fontSize: 12,
-    color: '#999',
+    color: '#64748b',
   },
   sharedLocation: {
     position: 'absolute',

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, View, Platform } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+import { decodePolyline } from '@/lib/navigation/polyline';
 
 interface TrafficLightMarker {
   id: string;
@@ -28,43 +29,6 @@ interface RouteData {
   }>;
 }
 
-/** Decode Google encoded polyline into lat/lng coordinates */
-function decodePolyline(encoded: string): Array<{ latitude: number; longitude: number }> {
-  const points: Array<{ latitude: number; longitude: number }> = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-
-  while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    const dlat = (result & 1) ? ~(result >> 1) : result >> 1;
-    lat += dlat;
-
-    shift = 0;
-    result = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    const dlng = (result & 1) ? ~(result >> 1) : result >> 1;
-    lng += dlng;
-
-    points.push({
-      latitude: lat / 1e5,
-      longitude: lng / 1e5,
-    });
-  }
-  return points;
-}
-
 interface NativeMapViewFullProps {
   currentLocation: Location | null;
   sharedLat: number | null;
@@ -74,8 +38,11 @@ interface NativeMapViewFullProps {
   showDirections: boolean;
   currentRoute: RouteData | null;
   isNavigationMode?: boolean;
+  /** Compass / GPS course in degrees (0–360), drives map rotation in navigation */
+  userHeading?: number;
+  /** When true, use hybrid satellite + road labels (GPS tracks over aerial imagery) */
+  satelliteMode?: boolean;
   onRouteUpdate?: () => void;
-  /** Nearby traffic lights to show on map */
   trafficLights?: TrafficLightMarker[];
 }
 
@@ -88,24 +55,31 @@ export default function NativeMapViewFull({
   showDirections,
   currentRoute,
   isNavigationMode = false,
+  userHeading = 0,
+  satelliteMode = false,
   onRouteUpdate,
   trafficLights = [],
 }: NativeMapViewFullProps) {
   const mapRef = useRef<MapView>(null);
-  const [routeCoordinates, setRouteCoordinates] = useState<Array<{latitude: number; longitude: number}>>([]);
-  const [userHeading, setUserHeading] = useState<number>(0);
+  const [routeCoordinates, setRouteCoordinates] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const hasCenteredOnUser = useRef(false);
+
+  const mapType = satelliteMode ? 'hybrid' : 'standard';
+  const useDarkStyle = !satelliteMode;
 
   // Center map on user location when it first loads (no destination)
   useEffect(() => {
     if (currentLocation && !showLocation && !hasCenteredOnUser.current) {
       hasCenteredOnUser.current = true;
-      mapRef.current?.animateToRegion({
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        latitudeDelta: 0.018,
-        longitudeDelta: 0.018,
-      }, 500);
+      mapRef.current?.animateToRegion(
+        {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          latitudeDelta: 0.018,
+          longitudeDelta: 0.018,
+        },
+        500
+      );
     }
   }, [currentLocation, showLocation]);
 
@@ -140,45 +114,85 @@ export default function NativeMapViewFull({
     }
   }, [showDirections, currentLocation, sharedLat, sharedLng, currentRoute?.polyline, onRouteUpdate]);
 
+  // Follow position + heading in navigation (satellite / road hybrid view)
+  useEffect(() => {
+    if (!isNavigationMode || !currentLocation || !mapRef.current) return;
+
+    const cam: {
+      center: { latitude: number; longitude: number };
+      pitch: number;
+      heading: number;
+      zoom: number;
+      altitude?: number;
+    } = {
+      center: {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+      },
+      pitch: 0,
+      heading: userHeading,
+      zoom: 17,
+    };
+
+    try {
+      mapRef.current.animateCamera(cam, { duration: 400 });
+    } catch {
+      mapRef.current.animateToRegion(
+        {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          latitudeDelta: 0.004,
+          longitudeDelta: 0.004,
+        },
+        400
+      );
+    }
+  }, [isNavigationMode, currentLocation?.latitude, currentLocation?.longitude, userHeading]);
+
+  const defaultLat = currentLocation?.latitude || sharedLat || -1.9441;
+  const defaultLng = currentLocation?.longitude || sharedLng || 30.0619;
+
   return (
     <MapView
+      key={isNavigationMode ? 'navigation' : 'browse'}
       ref={mapRef}
       style={styles.map}
+      mapType={mapType}
       {...(Platform.OS === 'web' && { googleMapsApiKey: 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U' })}
-      region={{
-        latitude: currentLocation?.latitude || sharedLat || -1.9441,
-        longitude: currentLocation?.longitude || sharedLng || 30.0619,
-        latitudeDelta: isNavigationMode ? 0.005 : 0.018,
-        longitudeDelta: isNavigationMode ? 0.005 : 0.018,
-      }}
-      followsUserLocation={isNavigationMode}
+      {...(isNavigationMode
+        ? {
+            initialRegion: {
+              latitude: defaultLat,
+              longitude: defaultLng,
+              latitudeDelta: 0.004,
+              longitudeDelta: 0.004,
+            },
+          }
+        : {
+            region: {
+              latitude: defaultLat,
+              longitude: defaultLng,
+              latitudeDelta: 0.018,
+              longitudeDelta: 0.018,
+            },
+          })}
+      followsUserLocation={false}
       showsUserLocation={!isNavigationMode}
       showsCompass={!isNavigationMode}
       showsMyLocationButton={!isNavigationMode}
-      customMapStyle={[
-        {
-          elementType: 'geometry',
-          stylers: [{ color: '#2c3e50' }],
-        },
-        {
-          elementType: 'labels.text.fill',
-          stylers: [{ color: '#a0aec0' }],
-        },
-        {
-          elementType: 'labels.text.stroke',
-          stylers: [{ color: '#2c3e50' }],
-        },
-        {
-          featureType: 'road',
-          elementType: 'geometry',
-          stylers: [{ color: '#4a5568' }],
-        },
-        {
-          featureType: 'road',
-          elementType: 'labels.text.fill',
-          stylers: [{ color: '#a0aec0' }],
-        },
-      ]}
+      rotateEnabled
+      pitchEnabled={false}
+      customMapStyle={
+        useDarkStyle
+          ? [
+              { elementType: 'geometry', stylers: [{ color: '#2c3e50' }] },
+              { elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
+              { elementType: 'labels.text.stroke', stylers: [{ color: '#2c3e50' }] },
+              { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#4a5568' }] },
+              { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
+            ]
+          : undefined
+      }
     >
       {currentLocation && !isNavigationMode && (
         <Marker
@@ -221,7 +235,7 @@ export default function NativeMapViewFull({
         <Polyline
           coordinates={routeCoordinates}
           strokeColor="#33ccff"
-          strokeWidth={6}
+          strokeWidth={isNavigationMode ? 7 : 6}
         />
       )}
       {trafficLights.map((tl) => (

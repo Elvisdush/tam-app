@@ -1,0 +1,10 @@
+{
+  "name": "tam-app-root",
+  "private": true,
+  "description": "Expo app lives in ./tam — use npm start from here, or cd tam && npx expo start",
+  "scripts": {
+    "start": "cd tam && npx expo start",
+    "start:tunnel": "cd tam && npx expo start --tunnel",
+    "web": "cd tam && npx expo start --web"
+  }
+}
