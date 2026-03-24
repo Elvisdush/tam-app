@@ -23,7 +23,7 @@ export function RideCard({ ride }: RideCardProps) {
     (user?.type === 'passenger' && ride.passengerId === user.id) ||
     (user?.type === 'driver' && ride.driverId === user.id);
 
-  const isPending = ride.status === 'pending';
+  const isPending = ride.status === 'pending' || ride.status === 'scheduled';
 
   const handleAccept = () => {
     if (!isPending || isOwnListing) return;
@@ -84,8 +84,11 @@ export function RideCard({ ride }: RideCardProps) {
           <Text style={styles.posted}>{formatPostedAgo(ride.createdAt)}</Text>
         </View>
 
-        {ride.status !== 'pending' && (
+        {ride.status !== 'pending' && ride.status !== 'scheduled' && (
           <Text style={styles.statusTag}>Status: {ride.status}</Text>
+        )}
+        {ride.status === 'scheduled' && ride.scheduledPickupAt && (
+          <Text style={styles.statusTag}>Pickup: {new Date(ride.scheduledPickupAt).toLocaleString()}</Text>
         )}
       </View>
 

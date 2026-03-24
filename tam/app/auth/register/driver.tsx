@@ -15,6 +15,8 @@ export default function RegisterDriverScreen() {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [vehicleImage, setVehicleImage] = useState<string | null>(null);
   const [vehicleType, setVehicleType] = useState<'car' | 'motorbike'>('motorbike');
+  const [vehiclePlate, setVehiclePlate] = useState('');
+  const [vehicleModel, setVehicleModel] = useState('');
   const [errors, setErrors] = useState<{[key: string]: boolean}>({});
   
   const register = useAuthStore(state => state.register);
@@ -83,7 +85,15 @@ export default function RegisterDriverScreen() {
       newErrors.password = true;
       emptyFields.push('password');
     }
-    
+    if (!vehiclePlate.trim()) {
+      newErrors.vehiclePlate = true;
+      emptyFields.push('vehiclePlate');
+    }
+    if (!vehicleModel.trim()) {
+      newErrors.vehicleModel = true;
+      emptyFields.push('vehicleModel');
+    }
+
     setErrors(newErrors);
     
     if (emptyFields.length > 0) {
@@ -106,6 +116,8 @@ export default function RegisterDriverScreen() {
       vehicleImage,
       type: 'driver',
       vehicleType,
+      vehiclePlate: vehiclePlate.trim(),
+      vehicleModel: vehicleModel.trim(),
     });
     router.replace('/home');
   };
@@ -238,7 +250,7 @@ export default function RegisterDriverScreen() {
               <Text style={styles.vehicleTypeLabel}>Your vehicle</Text>
               <View style={styles.vehicleTypeRow}>
                 <TouchableOpacity
-                  style={[styles.vehicleTypeChip, vehicleType === 'motorbike' && styles.vehicleTypeChipActive]}
+                  style={[styles.vehicleTypeChip, styles.vehicleTypeChipFirst, vehicleType === 'motorbike' && styles.vehicleTypeChipActive]}
                   onPress={() => setVehicleType('motorbike')}
                 >
                   <Text style={[styles.vehicleTypeChipText, vehicleType === 'motorbike' && styles.vehicleTypeChipTextActive]}>
@@ -254,6 +266,31 @@ export default function RegisterDriverScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              <TextInput
+                style={[styles.input, errors.vehiclePlate && styles.errorInput]}
+                placeholder="License plate number"
+                placeholderTextColor={errors.vehiclePlate ? '#ff4444' : '#999'}
+                value={vehiclePlate}
+                onChangeText={(text) => {
+                  setVehiclePlate(text);
+                  if (errors.vehiclePlate) setErrors((prev) => ({ ...prev, vehiclePlate: false }));
+                }}
+                autoCapitalize="characters"
+              />
+              {errors.vehiclePlate && <Text style={styles.errorText}>Plate number is required</Text>}
+
+              <TextInput
+                style={[styles.input, errors.vehicleModel && styles.errorInput]}
+                placeholder="Vehicle model (e.g. Toyota Corolla)"
+                placeholderTextColor={errors.vehicleModel ? '#ff4444' : '#999'}
+                value={vehicleModel}
+                onChangeText={(text) => {
+                  setVehicleModel(text);
+                  if (errors.vehicleModel) setErrors((prev) => ({ ...prev, vehicleModel: false }));
+                }}
+              />
+              {errors.vehicleModel && <Text style={styles.errorText}>Vehicle model is required</Text>}
               
               <TouchableOpacity 
                 style={styles.registerButton}
@@ -375,7 +412,6 @@ const styles = StyleSheet.create({
   vehicleTypeRow: {
     flexDirection: 'row',
     width: '100%',
-    gap: 10,
     marginBottom: 16,
   },
   vehicleTypeChip: {
@@ -386,6 +422,9 @@ const styles = StyleSheet.create({
     borderColor: '#ccc',
     backgroundColor: 'white',
     alignItems: 'center',
+  },
+  vehicleTypeChipFirst: {
+    marginRight: 10,
   },
   vehicleTypeChipActive: {
     borderColor: '#3498db',

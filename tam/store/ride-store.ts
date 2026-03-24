@@ -37,7 +37,11 @@ function computeSearchResults(
     const now = new Date().getTime();
     const createdAt = new Date(ride.createdAt).getTime();
     const thirtyMinutes = 30 * 60 * 1000;
-    const isExpired = now - createdAt > thirtyMinutes;
+    let isExpired = now - createdAt > thirtyMinutes;
+    if (ride.status === 'scheduled' && ride.scheduledPickupAt) {
+      const pickup = new Date(ride.scheduledPickupAt).getTime();
+      isExpired = pickup < now - thirtyMinutes;
+    }
     if (isExpired) return false;
 
     if (currentUser?.type === 'driver') {
@@ -73,7 +77,7 @@ interface RideState {
   lastSearchParams: LastSearchParams | null;
   searchRides: (from: string, to: string, price?: number, transportType?: 'car' | 'motorbike') => void;
   getNearbyAvailableDrivers: (userLat: number, userLng: number, radiusKm?: number) => { moto: Ride[]; car: Ride[] };
-  addRide: (ride: Omit<Ride, 'id'>) => Promise<void>;
+  addRide: (ride: Omit<Ride, 'id'>) => Promise<string | null>;
   acceptRide: (rideId: number | string) => Promise<void>;
   loadRides: () => void;
   updateDriverLocation: (rideId: number, location: LiveLocation) => Promise<void>;
@@ -161,12 +165,14 @@ export const useRideStore = create<RideState>()(
         try {
           const ridesRef = ref(database, 'rides');
           const newRideRef = push(ridesRef);
-          
+
           await firebaseSet(newRideRef, ride);
-          
+
           get().loadRides();
+          return newRideRef.key ?? null;
         } catch (error) {
           console.error('Error adding ride:', error);
+          return null;
         }
       },
       

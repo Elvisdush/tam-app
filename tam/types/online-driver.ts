@@ -6,4 +6,6 @@ export type OnlineDriverMarker = {
   transportType: 'car' | 'motorbike';
   updatedAt: number;
   isDemo?: boolean;
+  vehiclePlate?: string;
+  vehicleModel?: string;
 };

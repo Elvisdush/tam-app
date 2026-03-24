@@ -5,10 +5,13 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  Keyboard,
-  TouchableWithoutFeedback,
   Alert,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useAuthStore } from '@/store/auth-store';
 import { useRideStore } from '@/store/ride-store';
@@ -26,6 +29,7 @@ import {
   MIN_PRICE_CAR_OUTSIDE_KIGALI_RWF,
   MIN_PRICE_MOTO_KIGALI_RWF,
 } from '@/lib/rwanda-passenger-pricing';
+import type { OnlineDriverMarker } from '@/types/online-driver';
 
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
@@ -35,7 +39,14 @@ export default function HomeScreen() {
   const [transportType, setTransportType] = useState<'car' | 'motorbike'>('motorbike');
   const [selectedDestination, setSelectedDestination] = useState<RwandaDestination | null>(null);
 
+  const [bookingDriver, setBookingDriver] = useState<OnlineDriverMarker | null>(null);
+  /** actions = Book now / Later; schedule = date/time for Later */
+  const [bookingStep, setBookingStep] = useState<'actions' | 'schedule'>('actions');
+  const [scheduleDate, setScheduleDate] = useState(() => new Date(Date.now() + 60 * 60 * 1000));
+  const [showAndroidSchedulePicker, setShowAndroidSchedulePicker] = useState(false);
+
   const searchRides = useRideStore((state) => state.searchRides);
+  const addRide = useRideStore((state) => state.addRide);
   const { currentLocation, startLocationTracking } = useLocationStore();
   const onlineDrivers = useOnlineDriversStore((state) => state.onlineDrivers);
 
@@ -149,14 +160,129 @@ export default function HomeScreen() {
     }
   };
 
-  return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={styles.container}>
-        <View style={styles.mapPreview}>
-          <NativeMapView currentLocation={currentLocation} nearbyDrivers={nearbyDrivers} />
-        </View>
+  const closeBookingModal = () => {
+    setBookingDriver(null);
+    setBookingStep('actions');
+    setShowAndroidSchedulePicker(false);
+  };
 
-        <View style={styles.searchContainer}>
+  const validatePassengerSearchForBooking = (): boolean => {
+    if (user?.type !== 'passenger') return false;
+    if (!from.trim()) {
+      Alert.alert('From', 'Enter where you are leaving from.');
+      return false;
+    }
+    if (!selectedDestination) {
+      Alert.alert('Destination', 'Choose a district or city in Rwanda.');
+      return false;
+    }
+    const min = minPriceRwfForDestination(transportType, selectedDestination.id);
+    if (min == null) {
+      Alert.alert('Destination', 'Taxi moto is only available within Kigali City. Pick a Kigali destination.');
+      return false;
+    }
+    const p = Number(price.replace(/\s/g, ''));
+    if (Number.isNaN(p) || p < min) {
+      Alert.alert(
+        'Price',
+        `Minimum fare for ${transportType === 'car' ? 'taxi car' : 'taxi moto'} to this destination is ${min.toLocaleString()} RWF.`
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const handleDriverPress = (driver: OnlineDriverMarker) => {
+    if (user?.type !== 'passenger') return;
+    if (!validatePassengerSearchForBooking()) return;
+    if (driver.transportType !== transportType) {
+      Alert.alert(
+        'Vehicle type',
+        `This driver is a ${driver.transportType === 'car' ? 'taxi car' : 'taxi moto'}. Switch “Taxi moto or taxi car” above or choose another driver.`
+      );
+      return;
+    }
+    setScheduleDate(new Date(Date.now() + 60 * 60 * 1000));
+    setBookingStep('actions');
+    setBookingDriver(driver);
+  };
+
+  const onScheduleDateChange = (event: { type?: string }, date?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowAndroidSchedulePicker(false);
+      if (event.type === 'dismissed') return;
+    }
+    if (date) setScheduleDate(date);
+  };
+
+  const confirmBooking = async (scheduled: boolean) => {
+    if (!user || user.type !== 'passenger' || !selectedDestination || !bookingDriver) return;
+    if (scheduled) {
+      if (Platform.OS === 'web') {
+        Alert.alert('Scheduling', 'Please use the iOS or Android app to pick a date and time.');
+        return;
+      }
+      const minMs = Date.now() + 15 * 60 * 1000;
+      if (scheduleDate.getTime() < minMs) {
+        Alert.alert('Time', 'Pick a pickup time at least 15 minutes from now.');
+        return;
+      }
+    }
+    const p = Number(price.replace(/\s/g, ''));
+    const ride: Parameters<typeof addRide>[0] = {
+      from: from.trim(),
+      to: selectedDestination.name,
+      price: p,
+      transportType,
+      driverId: bookingDriver.userId,
+      passengerId: user.id,
+      status: scheduled ? 'scheduled' : 'pending',
+      createdAt: new Date().toISOString(),
+      ...(scheduled ? { scheduledPickupAt: scheduleDate.toISOString() } : {}),
+    };
+    if (currentLocation) {
+      ride.pickupLocation = {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        address: from.trim(),
+      };
+    }
+    const key = await addRide(ride);
+    closeBookingModal();
+    if (key) {
+      router.push({ pathname: '/rides/track', params: { rideId: key } });
+    } else {
+      Alert.alert('Booking', 'Could not create the ride. Try again.');
+    }
+  };
+
+  const offerRwf =
+    user?.type === 'passenger' && selectedDestination
+      ? Number(price.replace(/\s/g, ''))
+      : NaN;
+  const minForOffer =
+    user?.type === 'passenger' && selectedDestination
+      ? minPriceRwfForDestination(transportType, selectedDestination.id)
+      : null;
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.mapSection}>
+        <NativeMapView
+          currentLocation={currentLocation}
+          nearbyDrivers={nearbyDrivers}
+          onDriverPress={user?.type === 'passenger' ? handleDriverPress : undefined}
+        />
+      </View>
+
+      <ScrollView
+        style={styles.formScroll}
+        contentContainerStyle={styles.formContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator
+      >
+        <View style={styles.searchCard}>
           {user?.type === 'passenger' && (
             <>
               <Text style={styles.sectionLabel}>Taxi moto or taxi car?</Text>
@@ -238,25 +364,147 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </View>
-    </TouchableWithoutFeedback>
+      </ScrollView>
+
+      <Modal visible={bookingDriver !== null} animationType="fade" transparent>
+          <Pressable style={styles.modalBackdrop} onPress={closeBookingModal}>
+            <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                {bookingDriver && bookingStep === 'actions' && (
+                  <>
+                    <Text style={styles.modalTitle}>Book this driver</Text>
+                    <Text style={styles.modalLine}>
+                      <Text style={styles.modalLabel}>Name: </Text>
+                      {bookingDriver.username ?? 'Driver'}
+                    </Text>
+                    <Text style={styles.modalLine}>
+                      <Text style={styles.modalLabel}>Vehicle: </Text>
+                      {bookingDriver.transportType === 'car' ? 'Taxi car' : 'Taxi moto'}
+                    </Text>
+                    {(bookingDriver.vehiclePlate || bookingDriver.vehicleModel) && (
+                      <Text style={styles.modalLine}>
+                        <Text style={styles.modalLabel}>Plate / model: </Text>
+                        {[bookingDriver.vehiclePlate, bookingDriver.vehicleModel].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
+                    {minForOffer != null && !Number.isNaN(offerRwf) && (
+                      <Text style={styles.modalLine}>
+                        <Text style={styles.modalLabel}>Your offer: </Text>
+                        {offerRwf.toLocaleString()} RWF
+                        <Text style={styles.modalHint}> (min {minForOffer.toLocaleString()} RWF)</Text>
+                      </Text>
+                    )}
+                    <View style={styles.modalButtons}>
+                      <TouchableOpacity
+                        style={styles.modalPrimaryBtn}
+                        onPress={() => void confirmBooking(false)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.modalPrimaryBtnText}>Book now</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.modalSecondaryBtn}
+                        onPress={() => {
+                          if (Platform.OS === 'web') {
+                            Alert.alert('Scheduling', 'Please use the iOS or Android app to schedule a pickup time.');
+                            return;
+                          }
+                          setBookingStep('schedule');
+                          if (Platform.OS === 'android') {
+                            setShowAndroidSchedulePicker(true);
+                          }
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.modalSecondaryBtnText}>Later</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.modalCancelBtn} onPress={closeBookingModal}>
+                        <Text style={styles.modalCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+
+                {bookingDriver && bookingStep === 'schedule' && Platform.OS !== 'web' && (
+                  <>
+                    <Text style={styles.modalTitle}>Pickup time</Text>
+                    <Text style={styles.modalSub}>At least 15 minutes from now.</Text>
+                    {Platform.OS === 'ios' && (
+                      <DateTimePicker
+                        value={scheduleDate}
+                        mode="datetime"
+                        display="spinner"
+                        minimumDate={new Date(Date.now() + 15 * 60 * 1000)}
+                        onChange={(_, d) => {
+                          if (d) setScheduleDate(d);
+                        }}
+                      />
+                    )}
+                    {Platform.OS === 'android' && (
+                      <>
+                        <Text style={styles.modalLine}>{scheduleDate.toLocaleString()}</Text>
+                        <TouchableOpacity
+                          style={styles.modalSecondaryBtn}
+                          onPress={() => setShowAndroidSchedulePicker(true)}
+                        >
+                          <Text style={styles.modalSecondaryBtnText}>Change date & time</Text>
+                        </TouchableOpacity>
+                        {showAndroidSchedulePicker && (
+                          <DateTimePicker
+                            value={scheduleDate}
+                            mode="datetime"
+                            display="default"
+                            minimumDate={new Date(Date.now() + 15 * 60 * 1000)}
+                            onChange={onScheduleDateChange}
+                          />
+                        )}
+                      </>
+                    )}
+                    <TouchableOpacity
+                      style={styles.modalPrimaryBtn}
+                      onPress={() => void confirmBooking(true)}
+                    >
+                      <Text style={styles.modalPrimaryBtnText}>Confirm & book</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.modalCancelBtn}
+                      onPress={() => {
+                        setBookingStep('actions');
+                        setShowAndroidSchedulePicker(false);
+                      }}
+                    >
+                      <Text style={styles.modalCancelText}>Back</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#f1f5f9',
   },
-  mapPreview: {
-    flex: 1,
+  /** Top area: map stays visible and tappable (not covered by the form) */
+  mapSection: {
+    flex: 2,
+    minHeight: 220,
     width: '100%',
   },
-  searchContainer: {
-    position: 'absolute',
-    top: 100,
-    left: 20,
-    right: 20,
+  formScroll: {
+    flex: 3,
+  },
+  formContent: {
+    paddingBottom: 28,
+  },
+  searchCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
     backgroundColor: 'white',
     borderRadius: 15,
     padding: 15,
@@ -330,6 +578,80 @@ const styles = StyleSheet.create({
   nearbyButtonText: {
     color: 'white',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 12,
+  },
+  modalSub: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 12,
+  },
+  modalLine: {
+    fontSize: 15,
+    color: '#334155',
+    marginBottom: 8,
+    lineHeight: 22,
+  },
+  modalLabel: {
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  modalHint: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  modalButtons: {
+    marginTop: 16,
+  },
+  modalPrimaryBtn: {
+    backgroundColor: '#0f172a',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalPrimaryBtnText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalSecondaryBtn: {
+    backgroundColor: '#e2e8f0',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalSecondaryBtnText: {
+    color: '#334155',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalCancelBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    color: '#64748b',
+    fontSize: 15,
     fontWeight: '600',
   },
 });

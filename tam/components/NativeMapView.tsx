@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Platform, View, Text } from 'react-native';
+import { StyleSheet, Platform, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import { Car, Bike } from 'lucide-react-native';
 import type { OnlineDriverMarker } from '@/types/online-driver';
 
 interface Location {
@@ -14,9 +15,15 @@ interface NativeMapViewProps {
   currentLocation: Location | null;
   /** Drivers using the app nearby (real + optional demo) */
   nearbyDrivers?: OnlineDriverMarker[];
+  /** Passenger taps a driver marker — opens booking flow on Home */
+  onDriverPress?: (driver: OnlineDriverMarker) => void;
 }
 
-export default function NativeMapView({ currentLocation, nearbyDrivers = [] }: NativeMapViewProps) {
+export default function NativeMapView({
+  currentLocation,
+  nearbyDrivers = [],
+  onDriverPress,
+}: NativeMapViewProps) {
   return (
     <MapView
       style={styles.map}
@@ -62,6 +69,7 @@ export default function NativeMapView({ currentLocation, nearbyDrivers = [] }: N
           coordinate={{ latitude: d.latitude, longitude: d.longitude }}
           title={d.transportType === 'motorbike' ? 'Taxi moto' : 'Taxi car'}
           description={d.isDemo ? `${d.username ?? 'Demo'} · test` : d.username ?? 'Driver'}
+          onPress={() => onDriverPress?.(d)}
         >
           <View
             style={[
@@ -69,7 +77,11 @@ export default function NativeMapView({ currentLocation, nearbyDrivers = [] }: N
               d.transportType === 'car' ? styles.driverPinCar : styles.driverPinMoto,
             ]}
           >
-            <Text style={styles.driverPinText}>{d.transportType === 'motorbike' ? 'M' : 'C'}</Text>
+            {d.transportType === 'car' ? (
+              <Car color="#fff" size={16} strokeWidth={2.5} />
+            ) : (
+              <Bike color="#fff" size={16} strokeWidth={2.5} />
+            )}
           </View>
         </Marker>
       ))}
@@ -83,9 +95,9 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   driverPin: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 2,
     borderColor: 'white',
     alignItems: 'center',

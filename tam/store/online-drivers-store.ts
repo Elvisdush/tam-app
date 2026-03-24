@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ref, set, remove, onValue } from 'firebase/database';
+import { ref, set as firebaseSet, remove, onValue } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { buildDemoNearbyDrivers, includeDemoNearbyDrivers } from '@/lib/demo-nearby-drivers';
 import type { User } from '@/types/user';
@@ -60,6 +60,8 @@ export const useOnlineDriversStore = create<OnlineDriversState>((set, get) => ({
           longitude: row.longitude,
           transportType: row.transportType === 'car' ? 'car' : 'motorbike',
           updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : Date.now(),
+          vehiclePlate: typeof row.vehiclePlate === 'string' ? row.vehiclePlate : undefined,
+          vehicleModel: typeof row.vehicleModel === 'string' ? row.vehicleModel : undefined,
         };
       });
       set({ onlineDrivers: list });
@@ -70,12 +72,14 @@ export const useOnlineDriversStore = create<OnlineDriversState>((set, get) => ({
   setMyPresence: async (user, latitude, longitude) => {
     if (user.type !== 'driver') return;
     const transportType = user.vehicleType ?? 'motorbike';
-    await set(ref(database, `onlineDrivers/${user.id}`), {
+    await firebaseSet(ref(database, `onlineDrivers/${user.id}`), {
       latitude,
       longitude,
       transportType,
       username: user.username,
       updatedAt: Date.now(),
+      ...(user.vehiclePlate?.trim() ? { vehiclePlate: user.vehiclePlate.trim() } : {}),
+      ...(user.vehicleModel?.trim() ? { vehicleModel: user.vehicleModel.trim() } : {}),
     });
   },
 

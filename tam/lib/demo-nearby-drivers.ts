@@ -36,5 +36,7 @@ export function buildDemoNearbyDrivers(
     transportType: o.transportType,
     updatedAt: Date.now(),
     isDemo: true,
+    vehiclePlate: o.transportType === 'motorbike' ? `RAA ${1000 + i}M` : `RAA ${2000 + i}C`,
+    vehicleModel: o.transportType === 'motorbike' ? 'Honda CB' : 'Toyota Corolla',
   }));
 }
