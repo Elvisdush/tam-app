@@ -1,0 +1,19 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+*.ipr
+*.iws
+**/doc/api/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Firebase (local secrets)
+**/google-services.json
+**/GoogleService-Info.plist
+
+# OS
+.DS_Store
+Thumbs.db
