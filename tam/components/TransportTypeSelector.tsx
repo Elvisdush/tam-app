@@ -16,6 +16,9 @@ export function TransportTypeSelector({ selected, onSelect, nearbyCounts }: Tran
       <TouchableOpacity
         style={[styles.option, selected === 'motorbike' && styles.selectedOption]}
         onPress={() => onSelect('motorbike')}
+        accessibilityRole="button"
+        accessibilityState={{ selected: selected === 'motorbike' }}
+        accessibilityLabel="Taxi moto — motorcycle taxi"
       >
         <View style={styles.imageBackground}>
           <Image
@@ -39,6 +42,9 @@ export function TransportTypeSelector({ selected, onSelect, nearbyCounts }: Tran
       <TouchableOpacity
         style={[styles.option, selected === 'car' && styles.selectedOption]}
         onPress={() => onSelect('car')}
+        accessibilityRole="button"
+        accessibilityState={{ selected: selected === 'car' }}
+        accessibilityLabel="Taxi car — car taxi"
       >
         <View style={styles.imageBackground}>
           <Image

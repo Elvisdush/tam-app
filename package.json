@@ -1,0 +1,11 @@
+{
+  "name": "tam-app-root",
+  "private": true,
+  "description": "Expo app is in ./tam — always run scripts from here (they cd into tam) so the local Expo CLI matches expo-router.",
+  "scripts": {
+    "start": "cd tam && npx expo start",
+    "start:clear": "cd tam && npx expo start -c",
+    "start:tunnel": "cd tam && npx expo start --tunnel",
+    "web": "cd tam && npx expo start --web"
+  }
+}

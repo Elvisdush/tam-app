@@ -1,10 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { StyleSheet, View, Text, Platform } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Car, User, MapPin } from 'lucide-react-native';
 import { Ride, LiveLocation } from '@/types/ride';
-import { useLocationStore } from '@/store/location-store';
-import { useAuthStore } from '@/store/auth-store';
 
 interface RideTrackingMapProps {
   ride: Ride;
@@ -25,9 +23,6 @@ export default function RideTrackingMap({
   routeToPickup,
   routeToDropoff,
 }: RideTrackingMapProps) {
-  const user = useAuthStore((s) => s.user);
-  const isDriver = user?.type === 'driver';
-
   const driverPos = driverLocation ?? ride.driverLocation;
   const passengerPos = passengerLocation ?? ride.passengerLocation;
 
@@ -54,6 +49,9 @@ export default function RideTrackingMap({
         }
       : KIGALI_CENTER;
 
+  const pickupPos = ride.pickupLocation;
+  const dropoffPos = ride.dropoffLocation;
+
   return (
     <View style={styles.container}>
       <MapView
@@ -64,13 +62,17 @@ export default function RideTrackingMap({
           latitudeDelta: 0.03,
           longitudeDelta: 0.03,
         }}
-        customMapStyle={[
-          { elementType: 'geometry', stylers: [{ color: '#2c3e50' }] },
-          { elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
-          { elementType: 'labels.text.stroke', stylers: [{ color: '#2c3e50' }] },
-          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#4a5568' }] },
-          { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
-        ]}
+        customMapStyle={
+          Platform.OS === 'android'
+            ? [
+                { elementType: 'geometry', stylers: [{ color: '#2c3e50' }] },
+                { elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
+                { elementType: 'labels.text.stroke', stylers: [{ color: '#2c3e50' }] },
+                { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#4a5568' }] },
+                { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
+              ]
+            : undefined
+        }
         showsUserLocation={false}
         showsMyLocationButton
         showsCompass

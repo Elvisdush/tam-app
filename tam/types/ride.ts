@@ -21,8 +21,10 @@ export interface Ride {
   transportType: 'car' | 'motorbike';
   driverId: string | null;
   passengerId: string | null;
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled';
+  status: 'pending' | 'scheduled' | 'accepted' | 'completed' | 'cancelled';
   createdAt: string;
+  /** When the passenger requested pickup (ISO) — set for “book later” from map */
+  scheduledPickupAt?: string;
   /** Pickup coordinates (from location) */
   pickupLocation?: RideLocation;
   /** Dropoff coordinates (to location) */

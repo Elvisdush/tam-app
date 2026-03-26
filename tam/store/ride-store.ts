@@ -5,18 +5,79 @@ import { ref, push, set as firebaseSet, update as firebaseUpdate, onValue } from
 import { database } from '@/lib/firebase';
 import { Ride, LiveLocation } from '@/types/ride';
 
+export type LastSearchParams = {
+  from: string;
+  to: string;
+  price?: number;
+  transportType: 'car' | 'motorbike';
+};
+
+function getCurrentUserFromWindow() {
+  if (typeof window === 'undefined') return null;
+  return (window as unknown as { __authStore?: { getState: () => { user?: { type: string } | null } } })
+    .__authStore?.getState()?.user ?? null;
+}
+
+/** Filter/sort rides for the Posted list — used by search and after Firebase `rides` updates */
+function computeSearchResults(
+  rides: Ride[],
+  params: LastSearchParams
+): Ride[] {
+  const { from, to, price, transportType } = params;
+  const currentUser = getCurrentUserFromWindow();
+
+  let results = rides.filter((ride) => {
+    if (!ride.from || !ride.to) return false;
+
+    const matchesLocation =
+      ride.from.toLowerCase().includes(from.toLowerCase()) &&
+      ride.to.toLowerCase().includes(to.toLowerCase());
+    const matchesTransport = transportType ? ride.transportType === transportType : true;
+
+    const now = new Date().getTime();
+    const createdAt = new Date(ride.createdAt).getTime();
+    const thirtyMinutes = 30 * 60 * 1000;
+    let isExpired = now - createdAt > thirtyMinutes;
+    if (ride.status === 'scheduled' && ride.scheduledPickupAt) {
+      const pickup = new Date(ride.scheduledPickupAt).getTime();
+      isExpired = pickup < now - thirtyMinutes;
+    }
+    if (isExpired) return false;
+
+    if (currentUser?.type === 'driver') {
+      return matchesLocation && matchesTransport && ride.passengerId !== null;
+    }
+    if (currentUser?.type === 'passenger') {
+      return matchesLocation && matchesTransport && ride.driverId !== null;
+    }
+
+    return matchesLocation && matchesTransport;
+  });
+
+  if (price) {
+    results = [...results].sort((a, b) => Math.abs(a.price - price!) - Math.abs(b.price - price!));
+  }
+
+  return results;
+}
+
+function paramsEqual(a: LastSearchParams | null, b: LastSearchParams): boolean {
+  if (!a) return false;
+  return (
+    a.from === b.from &&
+    a.to === b.to &&
+    a.price === b.price &&
+    a.transportType === b.transportType
+  );
+}
+
 interface RideState {
   rides: Ride[];
   searchResults: Ride[];
-  lastSearchParams: {
-    from: string;
-    to: string;
-    price?: number;
-    transportType: 'car' | 'motorbike';
-  } | null;
+  lastSearchParams: LastSearchParams | null;
   searchRides: (from: string, to: string, price?: number, transportType?: 'car' | 'motorbike') => void;
   getNearbyAvailableDrivers: (userLat: number, userLng: number, radiusKm?: number) => { moto: Ride[]; car: Ride[] };
-  addRide: (ride: Omit<Ride, 'id'>) => Promise<void>;
+  addRide: (ride: Omit<Ride, 'id'>) => Promise<string | null>;
   acceptRide: (rideId: number | string) => Promise<void>;
   loadRides: () => void;
   updateDriverLocation: (rideId: number, location: LiveLocation) => Promise<void>;
@@ -35,57 +96,34 @@ export const useRideStore = create<RideState>()(
         const ridesRef = ref(database, 'rides');
         onValue(ridesRef, (snapshot) => {
           const data = snapshot.val();
+          let ridesArray: Ride[] = [];
           if (data) {
-            const ridesArray = Object.keys(data).map(key => ({
+            ridesArray = Object.keys(data).map((key) => ({
               ...data[key],
               id: /^-?\d+$/.test(key) ? parseInt(key, 10) : key,
-              firebaseKey: key
+              firebaseKey: key,
             }));
-            set({ rides: ridesArray });
+          }
+          const lastSearchParams = get().lastSearchParams;
+          if (lastSearchParams) {
+            const searchResults = computeSearchResults(ridesArray, lastSearchParams);
+            set({ rides: ridesArray, searchResults });
           } else {
-            set({ rides: [] });
+            set({ rides: ridesArray });
           }
         });
       },
-      
+
       searchRides: (from, to, price, transportType = 'motorbike') => {
         const rides = get().rides;
-        const currentUser = (window as any).__authStore?.getState()?.user;
-        
-        set({ 
-          lastSearchParams: { from, to, price, transportType }
-        });
-        
-        let results = rides.filter(ride => {
-          if (!ride.from || !ride.to) return false;
-          
-          const matchesLocation = ride.from.toLowerCase().includes(from.toLowerCase()) &&
-            ride.to.toLowerCase().includes(to.toLowerCase());
-          const matchesTransport = transportType ? ride.transportType === transportType : true;
-          
-          const now = new Date().getTime();
-          const createdAt = new Date(ride.createdAt).getTime();
-          const thirtyMinutes = 30 * 60 * 1000;
-          const isExpired = (now - createdAt) > thirtyMinutes;
-          
-          if (isExpired) return false;
-          
-          if (currentUser?.type === 'driver') {
-            return matchesLocation && matchesTransport && ride.passengerId !== null;
-          } else if (currentUser?.type === 'passenger') {
-            return matchesLocation && matchesTransport && ride.driverId !== null;
-          }
-          
-          return matchesLocation && matchesTransport;
-        });
-        
-        if (price) {
-          results = results.sort((a, b) => 
-            Math.abs(a.price - price) - Math.abs(b.price - price)
-          );
+        const params: LastSearchParams = { from, to, price, transportType };
+        const searchResults = computeSearchResults(rides, params);
+        const prev = get().lastSearchParams;
+        if (paramsEqual(prev, params)) {
+          set({ searchResults });
+        } else {
+          set({ lastSearchParams: params, searchResults });
         }
-        
-        set({ searchResults: results });
       },
 
       getNearbyAvailableDrivers: (userLat, userLng, radiusKm = 15) => {
@@ -127,12 +165,14 @@ export const useRideStore = create<RideState>()(
         try {
           const ridesRef = ref(database, 'rides');
           const newRideRef = push(ridesRef);
-          
+
           await firebaseSet(newRideRef, ride);
-          
+
           get().loadRides();
+          return newRideRef.key ?? null;
         } catch (error) {
           console.error('Error adding ride:', error);
+          return null;
         }
       },
       
