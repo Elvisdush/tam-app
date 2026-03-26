@@ -62,13 +62,17 @@ export default function RideTrackingMap({
           latitudeDelta: 0.03,
           longitudeDelta: 0.03,
         }}
-        customMapStyle={[
-          { elementType: 'geometry', stylers: [{ color: '#2c3e50' }] },
-          { elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
-          { elementType: 'labels.text.stroke', stylers: [{ color: '#2c3e50' }] },
-          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#4a5568' }] },
-          { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
-        ]}
+        customMapStyle={
+          Platform.OS === 'android'
+            ? [
+                { elementType: 'geometry', stylers: [{ color: '#2c3e50' }] },
+                { elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
+                { elementType: 'labels.text.stroke', stylers: [{ color: '#2c3e50' }] },
+                { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#4a5568' }] },
+                { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#a0aec0' }] },
+              ]
+            : undefined
+        }
         showsUserLocation={false}
         showsMyLocationButton
         showsCompass

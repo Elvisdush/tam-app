@@ -30,6 +30,19 @@ interface OnlineDriversState {
 const PRESENCE_MAX_AGE_MS = 5 * 60 * 1000;
 const DEFAULT_RADIUS_KM = 12;
 
+function isValidLatLng(lat: unknown, lng: unknown): boolean {
+  return (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -96,6 +109,7 @@ export const useOnlineDriversStore = create<OnlineDriversState>((set, get) => ({
     const real = get().onlineDrivers.filter((d) => {
       if (excludeUserId && d.userId === excludeUserId) return false;
       if (now - d.updatedAt > PRESENCE_MAX_AGE_MS) return false;
+      if (!isValidLatLng(d.latitude, d.longitude)) return false;
       const km = haversineKm(viewerLat, viewerLng, d.latitude, d.longitude);
       return km <= radiusKm;
     });

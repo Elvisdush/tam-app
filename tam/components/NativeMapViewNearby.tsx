@@ -44,7 +44,9 @@ export default function NativeMapViewNearby({
         latitudeDelta: 0.018,
         longitudeDelta: 0.018,
       }}
-      customMapStyle={[
+      customMapStyle={
+        Platform.OS === 'android'
+          ? [
         {
           elementType: 'geometry',
           stylers: [{ color: '#2c3e50' }],
@@ -67,7 +69,9 @@ export default function NativeMapViewNearby({
           elementType: 'labels.text.fill',
           stylers: [{ color: '#a0aec0' }],
         },
-      ]}
+      ]
+          : undefined
+      }
     >
       {currentLocation && (
         <Marker

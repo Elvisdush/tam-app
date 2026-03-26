@@ -10,16 +10,18 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { MapPin, X, ChevronDown } from 'lucide-react-native';
+import { MapPin, X, ChevronDown, Search, Mic } from 'lucide-react-native';
 import type { RwandaDestination } from '@/constants/rwanda-destinations';
 import { destinationsForTransport, filterDestinationsByQuery } from '@/lib/rwanda-passenger-pricing';
 type Props = {
   transportType: 'car' | 'motorbike';
   selected: RwandaDestination | null;
   onSelect: (destination: RwandaDestination) => void;
+  /** Waze-style single “Where to?” row */
+  appearance?: 'default' | 'waze';
 };
 
-export function PassengerDestinationPicker({ transportType, selected, onSelect }: Props) {
+export function PassengerDestinationPicker({ transportType, selected, onSelect, appearance = 'default' }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -31,27 +33,41 @@ export function PassengerDestinationPicker({ transportType, selected, onSelect }
       ? 'Taxi moto: Kigali City only. Pick a district in Kigali.'
       : 'Taxi car: any district or city in Rwanda.';
 
+  const isWaze = appearance === 'waze';
+
   return (
     <>
       <TouchableOpacity
-        style={styles.field}
+        style={[styles.field, isWaze && styles.fieldWaze]}
         onPress={() => {
           setQuery('');
           setOpen(true);
         }}
         accessibilityRole="button"
-        accessibilityLabel="Choose destination on the map"
+        accessibilityLabel={isWaze ? 'Where to' : 'Choose destination on the map'}
       >
-        <MapPin color="#64748b" size={20} />
+        {isWaze ? (
+          <Search color="#94a3b8" size={22} strokeWidth={2.2} />
+        ) : (
+          <MapPin color="#64748b" size={20} />
+        )}
         <View style={styles.fieldTextWrap}>
-          <Text style={styles.fieldLabel}>Destination (Rwanda)</Text>
-          <Text style={selected ? styles.fieldValue : styles.fieldPlaceholder} numberOfLines={2}>
-            {selected ? `${selected.name} · ${selected.subtitle}` : 'Tap to choose district / city'}
+          {!isWaze && <Text style={styles.fieldLabel}>Destination (Rwanda)</Text>}
+          <Text
+            style={selected ? styles.fieldValue : isWaze ? styles.fieldPlaceholderWaze : styles.fieldPlaceholder}
+            numberOfLines={isWaze ? 1 : 2}
+          >
+            {selected ? `${selected.name} · ${selected.subtitle}` : isWaze ? 'Where to?' : 'Tap to choose district / city'}
           </Text>
         </View>
-        <ChevronDown color="#94a3b8" size={22} />
+        {isWaze ? (
+          <Mic color="#4285F4" size={22} strokeWidth={2} />
+        ) : (
+          <ChevronDown color="#94a3b8" size={22} />
+        )}
       </TouchableOpacity>
-      <Text style={styles.hint}>{motoHint}</Text>
+      {!isWaze && <Text style={styles.hint}>{motoHint}</Text>}
+      {isWaze && <Text style={styles.hintWaze}>{motoHint}</Text>}
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
         <KeyboardAvoidingView
@@ -115,6 +131,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 8,
   },
+  fieldWaze: {
+    backgroundColor: '#f1f5f9',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 28,
+    marginBottom: 10,
+  },
   fieldTextWrap: {
     flex: 1,
     minWidth: 0,
@@ -134,11 +157,22 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontWeight: '500',
   },
+  fieldPlaceholderWaze: {
+    fontSize: 17,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
   hint: {
     fontSize: 12,
     color: '#64748b',
     marginBottom: 10,
     lineHeight: 16,
+  },
+  hintWaze: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginBottom: 8,
+    lineHeight: 14,
   },
   modalRoot: {
     flex: 1,

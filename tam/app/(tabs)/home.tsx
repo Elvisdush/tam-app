@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,19 +10,23 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Dimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
+import MapView from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Menu, Crosshair, X, Radio, Shield } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { useRideStore } from '@/store/ride-store';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
-import { TransportTypeSelector } from '@/components/TransportTypeSelector';
 import { PassengerDestinationPicker } from '@/components/PassengerDestinationPicker';
 import { useLocationStore } from '@/store/location-store';
 import NativeMapView from '@/components/NativeMapView';
 import { includeDemoNearbyDrivers } from '@/lib/demo-nearby-drivers';
 import type { RwandaDestination } from '@/constants/rwanda-destinations';
-import { isKigaliDestination } from '@/constants/kigali-destinations';
+import { isCoordinateInKigaliCity, isKigaliDestination } from '@/constants/kigali-destinations';
 import {
   minPriceRwfForDestination,
   MIN_PRICE_CAR_KIGALI_RWF,
@@ -31,9 +35,26 @@ import {
 } from '@/lib/rwanda-passenger-pricing';
 import type { OnlineDriverMarker } from '@/types/online-driver';
 
+const TAB_BAR_OFFSET = 52;
+
+function pickupLineFromLocation(loc: {
+  latitude: number;
+  longitude: number;
+  address?: string;
+}): string {
+  const addr = loc.address?.trim();
+  if (addr) return addr;
+  return `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`;
+}
+
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+  const mapRef = useRef<MapView>(null);
+  const hasCenteredMapOnLoad = useRef(false);
   const user = useAuthStore((state) => state.user);
   const [from, setFrom] = useState('');
+  /** When false, "From" stays synced to GPS / reverse-geocoded address */
+  const [fromIsManual, setFromIsManual] = useState(false);
   const [to, setTo] = useState('');
   const [price, setPrice] = useState('');
   const [transportType, setTransportType] = useState<'car' | 'motorbike'>('motorbike');
@@ -44,6 +65,10 @@ export default function HomeScreen() {
   const [bookingStep, setBookingStep] = useState<'actions' | 'schedule'>('actions');
   const [scheduleDate, setScheduleDate] = useState(() => new Date(Date.now() + 60 * 60 * 1000));
   const [showAndroidSchedulePicker, setShowAndroidSchedulePicker] = useState(false);
+  /** Passenger: full trip form (from, destination, price) only after tapping Taxi Moto or Taxi Car */
+  const [showTripDetails, setShowTripDetails] = useState(false);
+  /** Uber-style “Help drivers find you” card */
+  const [showPickupHelpCard, setShowPickupHelpCard] = useState(true);
 
   const searchRides = useRideStore((state) => state.searchRides);
   const addRide = useRideStore((state) => state.addRide);
@@ -53,6 +78,61 @@ export default function HomeScreen() {
   useEffect(() => {
     startLocationTracking();
   }, [startLocationTracking]);
+
+  useEffect(() => {
+    if (fromIsManual || !currentLocation) return;
+    setFrom(pickupLineFromLocation(currentLocation));
+  }, [
+    currentLocation?.latitude,
+    currentLocation?.longitude,
+    currentLocation?.address,
+    fromIsManual,
+  ]);
+
+  const onFromChangeText = (text: string) => {
+    setFrom(text);
+    setFromIsManual(true);
+  };
+
+  const useCurrentLocationForFrom = () => {
+    const loc = useLocationStore.getState().currentLocation;
+    if (!loc) {
+      Alert.alert('Location', 'Waiting for your position. Check location permissions.');
+      return;
+    }
+    setFromIsManual(false);
+    setFrom(pickupLineFromLocation(loc));
+  };
+
+  useEffect(() => {
+    if (!currentLocation || hasCenteredMapOnLoad.current) return;
+    hasCenteredMapOnLoad.current = true;
+    mapRef.current?.animateToRegion(
+      {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: 0.045,
+        longitudeDelta: 0.045,
+      },
+      500
+    );
+  }, [currentLocation?.latitude, currentLocation?.longitude]);
+
+  const recenterMapOnUser = () => {
+    if (!currentLocation) {
+      Alert.alert('Location', 'Waiting for your position. Check location permissions.');
+      return;
+    }
+    mapRef.current?.animateToRegion(
+      {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: 0.035,
+        longitudeDelta: 0.035,
+      },
+      450
+    );
+  };
 
   useEffect(() => {
     const unsubscribe = useOnlineDriversStore.getState().loadOnlineDrivers();
@@ -101,6 +181,60 @@ export default function HomeScreen() {
       );
   }, [currentLocation?.latitude, currentLocation?.longitude, onlineDrivers, excludeViewer]);
 
+  /** Taxi moto: pickup must be inside Kigali (GPS). */
+  const passengerCanUseTaxiMoto = useMemo(() => {
+    if (!currentLocation) return false;
+    return isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude);
+  }, [currentLocation?.latitude, currentLocation?.longitude]);
+
+  /**
+   * Keep transport in sync: taxi moto is invalid without Kigali GPS — never leave motorbike selected.
+   * (Silent; alerts only when opening the trip sheet — see openTripDetails.)
+   */
+  useEffect(() => {
+    if (user?.type !== 'passenger') return;
+    if (transportType !== 'motorbike') return;
+    if (passengerCanUseTaxiMoto) return;
+    setTransportType('car');
+  }, [user?.type, transportType, passengerCanUseTaxiMoto]);
+
+  const openTripDetails = () => {
+    if (user?.type === 'passenger' && transportType === 'motorbike' && !passengerCanUseTaxiMoto) {
+      setTransportType('car');
+      if (currentLocation && !isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
+        Alert.alert(
+          'Taxi moto only in Kigali',
+          'Taxi moto is only available when your pickup is inside Kigali City. We switched you to Taxi Car for this trip.'
+        );
+      } else if (!currentLocation) {
+        Alert.alert(
+          'Location needed for taxi moto',
+          'Turn on location to use taxi moto in Kigali. Using Taxi Car for this trip.'
+        );
+      }
+    }
+    setShowTripDetails(true);
+  };
+
+  const trySelectTaxiMoto = () => {
+    if (!currentLocation) {
+      Alert.alert(
+        'Location required',
+        'Taxi moto is only available in Kigali City. Turn on location so we can check that your pickup is inside Kigali.'
+      );
+      return;
+    }
+    if (!isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
+      Alert.alert(
+        'Taxi moto only in Kigali',
+        'Taxi moto is only available when you are in Kigali City. Outside Kigali, use Taxi Car for your trip.'
+      );
+      return;
+    }
+    setTransportType('motorbike');
+    setShowTripDetails(true);
+  };
+
   /** Taxi moto is Kigali-only — clear an out-of-Kigali destination when switching to moto */
   useEffect(() => {
     if (user?.type !== 'passenger') return;
@@ -128,9 +262,29 @@ export default function HomeScreen() {
 
   const handleSearch = () => {
     if (user?.type === 'passenger') {
+      if (!showTripDetails) {
+        Alert.alert('Trip', 'Choose Taxi Moto or Taxi Car above to enter your destination and price.');
+        return;
+      }
       if (!from.trim()) {
         Alert.alert('From', 'Enter where you are leaving from.');
         return;
+      }
+      if (transportType === 'motorbike') {
+        if (!currentLocation) {
+          Alert.alert(
+            'Location required',
+            'Taxi moto is only available in Kigali City. Turn on location so we can verify your pickup area.'
+          );
+          return;
+        }
+        if (!isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
+          Alert.alert(
+            'Taxi moto only in Kigali',
+            'Taxi moto is only available when your pickup is inside Kigali City. Switch to Taxi Car or move your pickup into Kigali.'
+          );
+          return;
+        }
       }
       if (!selectedDestination) {
         Alert.alert('Destination', 'Choose a district or city in Rwanda.');
@@ -168,9 +322,29 @@ export default function HomeScreen() {
 
   const validatePassengerSearchForBooking = (): boolean => {
     if (user?.type !== 'passenger') return false;
+    if (!showTripDetails) {
+      Alert.alert('Trip', 'Choose Taxi Moto or Taxi Car above to plan your ride.');
+      return false;
+    }
     if (!from.trim()) {
       Alert.alert('From', 'Enter where you are leaving from.');
       return false;
+    }
+    if (transportType === 'motorbike') {
+      if (!currentLocation) {
+        Alert.alert(
+          'Location required',
+          'Taxi moto is only available in Kigali City. Turn on location so we can verify your pickup area.'
+        );
+        return false;
+      }
+      if (!isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
+        Alert.alert(
+          'Taxi moto only in Kigali',
+          'Taxi moto is only available when your pickup is inside Kigali City. Use Taxi Car for trips outside Kigali.'
+        );
+        return false;
+      }
     }
     if (!selectedDestination) {
       Alert.alert('Destination', 'Choose a district or city in Rwanda.');
@@ -265,106 +439,366 @@ export default function HomeScreen() {
       ? minPriceRwfForDestination(transportType, selectedDestination.id)
       : null;
 
+  const bottomSafe = insets.bottom + TAB_BAR_OFFSET;
+  const passengerHintSheetMaxHeight = useMemo(
+    () => Math.min(200, Math.round(Dimensions.get('window').height * 0.28)),
+    []
+  );
+  const driverSheetMaxHeight = useMemo(
+    () => Math.min(520, Math.round(Dimensions.get('window').height * 0.52)),
+    []
+  );
+
   return (
     <View style={styles.container}>
-      <View style={styles.mapSection}>
-        <NativeMapView
-          currentLocation={currentLocation}
-          nearbyDrivers={nearbyDrivers}
-          onDriverPress={user?.type === 'passenger' ? handleDriverPress : undefined}
-        />
-      </View>
+      <NativeMapView
+        ref={mapRef}
+        currentLocation={currentLocation}
+        nearbyDrivers={nearbyDrivers}
+        userNearbyDriverCount={user?.type === 'passenger' ? nearbyDrivers.length : 0}
+        onDriverPress={user?.type === 'passenger' ? handleDriverPress : undefined}
+      />
 
-      <ScrollView
-        style={styles.formScroll}
-        contentContainerStyle={styles.formContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        showsVerticalScrollIndicator
-      >
-        <View style={styles.searchCard}>
-          {user?.type === 'passenger' && (
-            <>
-              <Text style={styles.sectionLabel}>Taxi moto or taxi car?</Text>
-              <Text style={styles.sectionSub}>
-                You&apos;re booking as a passenger — tap the vehicle you want. The map and &quot;nearby&quot; counts
-                show drivers for that type, and Search uses the same choice.
-              </Text>
-              <TransportTypeSelector
-                selected={transportType}
-                onSelect={setTransportType}
-                nearbyCounts={nearbyCounts ?? undefined}
-              />
-              {nearbyCounts != null && includeDemoNearbyDrivers() && (
-                <Text style={styles.demoHint}>Includes test drivers on the map (demo)</Text>
-              )}
-            </>
-          )}
-
-          {user?.type === 'driver' && currentLocation && (
-            <Text style={styles.driverPresenceHint}>
-              You appear on the map for passengers when location is on.
-            </Text>
-          )}
-
-          <TextInput
-            style={styles.input}
-            placeholder="From (e.g. your area)"
-            placeholderTextColor="#999"
-            value={from}
-            onChangeText={setFrom}
-          />
-
-          {user?.type === 'passenger' ? (
-            <>
-              <PassengerDestinationPicker
-                transportType={transportType}
-                selected={selectedDestination}
-                onSelect={(d) => {
-                  setSelectedDestination(d);
-                  setTo(d.name);
-                  const m = minPriceRwfForDestination(transportType, d.id);
-                  if (m != null) setPrice(String(m));
-                }}
-              />
-              <Text style={styles.priceRules}>
-                {transportType === 'car'
-                  ? `Taxi car: min ${MIN_PRICE_CAR_KIGALI_RWF.toLocaleString()} RWF in Kigali · min ${MIN_PRICE_CAR_OUTSIDE_KIGALI_RWF.toLocaleString()} RWF outside Kigali.`
-                  : `Taxi moto: Kigali only · min ${MIN_PRICE_MOTO_KIGALI_RWF.toLocaleString()} RWF.`}
-              </Text>
-              {minFareRwf != null && (
-                <Text style={styles.minFare}>Minimum for this trip: {minFareRwf.toLocaleString()} RWF</Text>
-              )}
-              <TextInput
-                style={styles.input}
-                placeholder={minFareRwf != null ? `Offer (min ${minFareRwf.toLocaleString()} RWF)` : 'Offer (RWF)'}
-                placeholderTextColor="#999"
-                value={price}
-                onChangeText={setPrice}
-                keyboardType="numeric"
-              />
-            </>
-          ) : (
-            <TextInput
-              style={styles.input}
-              placeholder="To?"
-              placeholderTextColor="#999"
-              value={to}
-              onChangeText={setTo}
-            />
-          )}
-
-          <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-            <Text style={styles.searchButtonText}>Search</Text>
+      <View style={styles.overlay} pointerEvents="box-none">
+        <View style={[styles.topBarRow, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity
+            style={styles.menuBtn}
+            onPress={() => router.push('/profile')}
+            activeOpacity={0.85}
+            accessibilityLabel="Menu"
+          >
+            <Menu color="#111" size={22} strokeWidth={2.25} />
           </TouchableOpacity>
-
-          {user?.type === 'driver' && (
-            <TouchableOpacity style={styles.nearbyButton} onPress={() => router.push('/nearby')}>
-              <Text style={styles.nearbyButtonText}>Near By</Text>
+          {user?.type === 'passenger' ? (
+            <TouchableOpacity
+              style={styles.pickupBar}
+              onPress={openTripDetails}
+              activeOpacity={0.88}
+              accessibilityLabel="Edit pickup"
+            >
+              <Text style={styles.pickupBarText} numberOfLines={1}>
+                Meet at the pickup point{from.trim() ? ` for ${from.trim()}` : ''}
+              </Text>
+              <Text style={styles.pickupEdit}>EDIT</Text>
             </TouchableOpacity>
+          ) : user?.type === 'driver' ? (
+            <TouchableOpacity
+              style={styles.pickupBar}
+              onPress={() => router.push('/profile')}
+              activeOpacity={0.88}
+              accessibilityLabel="Driver profile"
+            >
+              <Text style={styles.pickupBarText} numberOfLines={1}>
+                Driver mode · you appear on the map for riders
+              </Text>
+              <Text style={styles.pickupEdit}>PROFILE</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.pickupBar, styles.pickupBarMuted]}>
+              <Text style={styles.pickupBarText} numberOfLines={1}>
+                Loading your account…
+              </Text>
+            </View>
           )}
         </View>
-      </ScrollView>
+
+        <View style={[styles.rightFabColumn, { top: insets.top + 76 }]}>
+          <TouchableOpacity
+            style={styles.fabRound}
+            onPress={recenterMapOnUser}
+            activeOpacity={0.85}
+            accessibilityLabel="Center map on my location"
+          >
+            <Crosshair color="#111" size={22} strokeWidth={2.25} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.fabRound}
+            onPress={() =>
+              Alert.alert(
+                'Live location',
+                'Keep location enabled so drivers can reach your pickup. You can adjust permissions in system settings.'
+              )
+            }
+            activeOpacity={0.85}
+            accessibilityLabel="About live location"
+          >
+            <Radio color="#111" size={22} strokeWidth={2.25} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.fabRound, styles.fabRoundSafety]}
+            onPress={() =>
+              Alert.alert('Safety', 'Use in-app chat and trip sharing with a contact when you ride.')
+            }
+            activeOpacity={0.85}
+            accessibilityLabel="Safety"
+          >
+            <Shield color="#1e40af" size={22} strokeWidth={2.25} />
+          </TouchableOpacity>
+        </View>
+
+        {user?.type === 'passenger' && showPickupHelpCard && (
+          <View style={styles.helpCard} pointerEvents="box-none">
+            <View style={styles.helpCardInner}>
+              <View style={styles.helpCardPointer} />
+              <TouchableOpacity
+                style={styles.helpCardDismiss}
+                onPress={() => setShowPickupHelpCard(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Dismiss"
+              >
+                <X color="#64748b" size={18} strokeWidth={2.5} />
+              </TouchableOpacity>
+              <Text style={styles.helpCardTitle}>Help drivers find you more quickly</Text>
+              <Text style={styles.helpCardBody}>Share live location for pick-ups and keep your pickup note updated.</Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      <View style={[styles.bottomChrome, { paddingBottom: bottomSafe }]} pointerEvents="box-none">
+        {user?.type === 'passenger' && (
+          <View style={styles.uberSheet}>
+            <View style={styles.sheetBlueStrip}>
+              <Text style={styles.sheetBlueStripText}>All drivers are screened</Text>
+            </View>
+            <View style={styles.uberSheetBody}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.taxiPill}>
+                <TouchableOpacity
+                  style={[
+                    styles.taxiPillSeg,
+                    transportType === 'motorbike' && styles.taxiPillSegActive,
+                    !passengerCanUseTaxiMoto && styles.taxiPillSegMuted,
+                  ]}
+                  onPress={trySelectTaxiMoto}
+                  activeOpacity={0.9}
+                >
+                  <Text
+                    style={[
+                      styles.taxiPillText,
+                      transportType === 'motorbike' && styles.taxiPillTextActive,
+                      !passengerCanUseTaxiMoto && styles.taxiPillTextMuted,
+                    ]}
+                  >
+                    Taxi Moto
+                  </Text>
+                  <Text
+                    style={[
+                      styles.taxiPillKigaliNote,
+                      transportType === 'motorbike' && passengerCanUseTaxiMoto && styles.taxiPillKigaliNoteOnActive,
+                      !passengerCanUseTaxiMoto && styles.taxiPillKigaliNoteMuted,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {passengerCanUseTaxiMoto ? 'Kigali only' : 'Not available here'}
+                  </Text>
+                  {nearbyCounts != null && (
+                    <Text
+                      style={[
+                        styles.taxiPillSub,
+                        transportType === 'motorbike' && styles.taxiPillSubActive,
+                        !passengerCanUseTaxiMoto && styles.taxiPillSubMuted,
+                      ]}
+                    >
+                      {nearbyCounts.moto} nearby
+                    </Text>
+                  )}
+                </TouchableOpacity>
+                <View style={styles.taxiPillDivider} />
+                <TouchableOpacity
+                  style={[styles.taxiPillSeg, transportType === 'car' && styles.taxiPillSegActive]}
+                  onPress={() => {
+                    setTransportType('car');
+                    setShowTripDetails(true);
+                  }}
+                  activeOpacity={0.9}
+                >
+                  <Text style={[styles.taxiPillText, transportType === 'car' && styles.taxiPillTextActive]}>
+                    Taxi Car
+                  </Text>
+                  {nearbyCounts != null && (
+                    <Text
+                      style={[styles.taxiPillSub, transportType === 'car' && styles.taxiPillSubActive]}
+                    >
+                      {nearbyCounts.car} nearby
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {!showTripDetails && (
+                <ScrollView
+                  contentContainerStyle={styles.uberSheetScroll}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  showsVerticalScrollIndicator={false}
+                  style={{ maxHeight: passengerHintSheetMaxHeight }}
+                >
+                  {nearbyCounts != null && includeDemoNearbyDrivers() && (
+                    <Text style={styles.demoHint}>Demo drivers on the map</Text>
+                  )}
+                  <Text style={styles.tripHint}>
+                    Tap <Text style={styles.tripHintStrong}>Taxi Moto</Text> or{' '}
+                    <Text style={styles.tripHintStrong}>Taxi Car</Text>, then set pickup, destination, and your offer.
+                  </Text>
+                </ScrollView>
+              )}
+
+              {showTripDetails && (
+                <TouchableOpacity
+                  style={styles.destinationPreviewRow}
+                  onPress={openTripDetails}
+                  activeOpacity={0.88}
+                >
+                  <View style={styles.destinationPreviewDot} />
+                  <View style={styles.destinationPreviewTextWrap}>
+                    <Text style={styles.destinationPreviewLabel}>Going to</Text>
+                    <Text style={styles.destinationPreviewValue} numberOfLines={1}>
+                      {selectedDestination?.name ?? 'Add destination'}
+                    </Text>
+                  </View>
+                  <Text style={styles.destinationPreviewAction}>Add or change</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
+        {user?.type === 'driver' && (
+          <View style={styles.uberSheet}>
+            <View style={styles.sheetBlueStrip}>
+              <Text style={styles.sheetBlueStripText}>Stay visible · riders book nearby drivers</Text>
+            </View>
+            <View style={styles.uberSheetBody}>
+              <View style={styles.sheetHandle} />
+              <ScrollView
+                contentContainerStyle={styles.sheetScroll}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator={false}
+                style={{ maxHeight: driverSheetMaxHeight }}
+              >
+                {currentLocation && (
+                  <Text style={styles.driverPresenceHint}>
+                    You appear on the map for passengers when location is on.
+                  </Text>
+                )}
+                <TextInput
+                  style={styles.input}
+                  placeholder={fromIsManual ? 'From (e.g. your area)' : 'Current location (auto)'}
+                  placeholderTextColor="#94a3b8"
+                  value={from}
+                  onChangeText={onFromChangeText}
+                />
+                <View style={styles.pickupFromMeta}>
+                  <Text style={styles.pickupAutoHint}>
+                    {fromIsManual ? 'Custom pickup' : 'Filled from your GPS'}
+                  </Text>
+                  <TouchableOpacity onPress={useCurrentLocationForFrom} hitSlop={8}>
+                    <Text style={styles.pickupLocationLink}>Use current location</Text>
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="To?"
+                  placeholderTextColor="#94a3b8"
+                  value={to}
+                  onChangeText={setTo}
+                />
+                <TouchableOpacity style={styles.searchButton} onPress={handleSearch} activeOpacity={0.9}>
+                  <Text style={styles.searchButtonText}>Search</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.nearbyButton} onPress={() => router.push('/nearby')} activeOpacity={0.9}>
+                  <Text style={styles.nearbyButtonText}>Near By</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        )}
+      </View>
+
+      <Modal
+        visible={user?.type === 'passenger' && showTripDetails}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowTripDetails(false)}
+      >
+        <View style={styles.tripCenterRoot}>
+          <View style={styles.tripCenterBackdrop} />
+          <KeyboardAvoidingView
+            style={styles.tripCenterAvoid}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.tripCenterCardInner}>
+              <View style={styles.tripCenterHeader}>
+                <Text style={styles.tripCenterTitle}>Your trip</Text>
+                <TouchableOpacity
+                  onPress={() => setShowTripDetails(false)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  accessibilityLabel="Close"
+                >
+                  <X color="#64748b" size={26} strokeWidth={2.2} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.tripCenterScroll}
+              >
+                {nearbyCounts != null && includeDemoNearbyDrivers() && (
+                  <Text style={styles.demoHint}>Demo drivers on the map</Text>
+                )}
+                <TextInput
+                  style={styles.input}
+                  placeholder={fromIsManual ? 'From (e.g. your area)' : 'Current location (auto)'}
+                  placeholderTextColor="#94a3b8"
+                  value={from}
+                  onChangeText={onFromChangeText}
+                />
+                <View style={styles.pickupFromMeta}>
+                  <Text style={styles.pickupAutoHint}>
+                    {fromIsManual ? 'Custom pickup' : 'Filled from your GPS'}
+                  </Text>
+                  <TouchableOpacity onPress={useCurrentLocationForFrom} hitSlop={8}>
+                    <Text style={styles.pickupLocationLink}>Use current location</Text>
+                  </TouchableOpacity>
+                </View>
+                <PassengerDestinationPicker
+                  transportType={transportType}
+                  selected={selectedDestination}
+                  appearance="waze"
+                  onSelect={(d) => {
+                    setSelectedDestination(d);
+                    setTo(d.name);
+                    const m = minPriceRwfForDestination(transportType, d.id);
+                    if (m != null) setPrice(String(m));
+                  }}
+                />
+                <Text style={styles.priceRules}>
+                  {transportType === 'car'
+                    ? `Taxi car: min ${MIN_PRICE_CAR_KIGALI_RWF.toLocaleString()} RWF in Kigali · min ${MIN_PRICE_CAR_OUTSIDE_KIGALI_RWF.toLocaleString()} RWF outside Kigali.`
+                    : `Taxi moto: Kigali only · min ${MIN_PRICE_MOTO_KIGALI_RWF.toLocaleString()} RWF.`}
+                </Text>
+                {minFareRwf != null && (
+                  <Text style={styles.minFare}>Minimum for this trip: {minFareRwf.toLocaleString()} RWF</Text>
+                )}
+                <TextInput
+                  style={styles.input}
+                  placeholder={minFareRwf != null ? `Offer (min ${minFareRwf.toLocaleString()} RWF)` : 'Offer (RWF)'}
+                  placeholderTextColor="#94a3b8"
+                  value={price}
+                  onChangeText={setPrice}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity style={styles.searchButton} onPress={handleSearch} activeOpacity={0.9}>
+                  <Text style={styles.searchButtonText}>Search</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       <Modal visible={bookingDriver !== null} animationType="fade" transparent>
           <Pressable style={styles.modalBackdrop} onPress={closeBookingModal}>
@@ -488,49 +922,355 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
-  },
-  /** Top area: map stays visible and tappable (not covered by the form) */
-  mapSection: {
-    flex: 2,
-    minHeight: 220,
     width: '100%',
+    backgroundColor: '#e8eef3',
   },
-  formScroll: {
-    flex: 3,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
   },
-  formContent: {
-    paddingBottom: 28,
+  topBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
   },
-  searchCard: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 15,
+  menuBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 6,
   },
-  sectionLabel: {
-    fontSize: 16,
-    color: '#111',
-    marginBottom: 6,
-    fontWeight: '700',
+  pickupBar: {
+    flex: 1,
+    marginLeft: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 52,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  sectionSub: {
+  pickupBarText: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+    marginRight: 12,
+  },
+  pickupEdit: {
+    color: '#ffffff',
     fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  pickupBarMuted: {
+    opacity: 0.85,
+  },
+  rightFabColumn: {
+    position: 'absolute',
+    right: 12,
+  },
+  fabRound: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginBottom: 10,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  fabRoundSafety: {
+    backgroundColor: '#eff6ff',
+  },
+  helpCard: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    top: '36%',
+    alignItems: 'center',
+  },
+  helpCardInner: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingRight: 36,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  helpCardPointer: {
+    position: 'absolute',
+    bottom: -8,
+    alignSelf: 'center',
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderTopWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#ffffff',
+  },
+  helpCardDismiss: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 4,
+  },
+  helpCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 6,
+    paddingRight: 8,
+  },
+  helpCardBody: {
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+  },
+  bottomChrome: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    maxWidth: '100%',
+  },
+  uberSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  sheetBlueStrip: {
+    backgroundColor: '#276ef1',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  sheetBlueStripText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  uberSheetBody: {
+    paddingBottom: 12,
+  },
+  uberSheetScroll: {
+    paddingHorizontal: 18,
+    paddingBottom: 8,
+  },
+  destinationPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e2e8f0',
+  },
+  destinationPreviewDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#276ef1',
+    marginRight: 12,
+  },
+  destinationPreviewTextWrap: {
+    flex: 1,
+  },
+  destinationPreviewLabel: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#64748b',
-    lineHeight: 18,
+    marginBottom: 2,
+  },
+  destinationPreviewValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  destinationPreviewAction: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#276ef1',
+  },
+  taxiPill: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: 'rgba(39, 110, 241, 0.12)',
+    borderRadius: 28,
+    padding: 3,
+    marginHorizontal: 16,
+    marginTop: 4,
     marginBottom: 12,
+    shadowColor: '#276ef1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  taxiPillSeg: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: 25,
+  },
+  taxiPillSegActive: {
+    backgroundColor: '#276ef1',
+  },
+  taxiPillDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(39, 110, 241, 0.35)',
+    marginVertical: 6,
+  },
+  taxiPillText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1e40af',
+  },
+  taxiPillTextActive: {
+    color: '#ffffff',
+  },
+  taxiPillSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2563eb',
+    marginTop: 2,
+  },
+  taxiPillSubActive: {
+    color: 'rgba(255,255,255,0.92)',
+  },
+  taxiPillSegMuted: {
+    opacity: 0.65,
+  },
+  taxiPillTextMuted: {
+    color: '#64748b',
+  },
+  taxiPillSubMuted: {
+    color: '#94a3b8',
+  },
+  taxiPillKigaliNote: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2563eb',
+    marginTop: 2,
+  },
+  taxiPillKigaliNoteOnActive: {
+    color: 'rgba(255,255,255,0.88)',
+  },
+  taxiPillKigaliNoteMuted: {
+    color: '#b91c1c',
+  },
+  tripHint: {
+    fontSize: 15,
+    color: '#64748b',
+    lineHeight: 22,
+    textAlign: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+  },
+  tripHintStrong: {
+    fontWeight: '800',
+    color: '#276ef1',
+  },
+  tripCenterRoot: {
+    flex: 1,
+  },
+  tripCenterBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+  },
+  tripCenterAvoid: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 28,
+    zIndex: 1,
+  },
+  tripCenterCardInner: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    maxHeight: '88%',
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  tripCenterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+  },
+  tripCenterTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  tripCenterScroll: {
+    paddingBottom: 16,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#cbd5e1',
+    marginBottom: 12,
+  },
+  sheetScroll: {
+    paddingHorizontal: 18,
+    paddingBottom: 20,
   },
   demoHint: {
     fontSize: 11,
     color: '#94a3b8',
-    marginBottom: 10,
-    marginTop: -4,
+    marginBottom: 8,
   },
   driverPresenceHint: {
     fontSize: 12,
@@ -550,18 +1290,41 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#f1f5f9',
     padding: 15,
-    borderRadius: 30,
-    marginBottom: 10,
+    borderRadius: 28,
+    marginBottom: 6,
     fontSize: 16,
+    color: '#0f172a',
+  },
+  pickupFromMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  pickupAutoHint: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  pickupLocationLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#276ef1',
   },
   searchButton: {
-    backgroundColor: '#333',
-    paddingVertical: 15,
-    borderRadius: 30,
+    backgroundColor: '#0f172a',
+    paddingVertical: 16,
+    borderRadius: 28,
     alignItems: 'center',
-    marginTop: 5,
+    marginTop: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
   },
   searchButtonText: {
     color: 'white',
