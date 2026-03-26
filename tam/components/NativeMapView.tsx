@@ -85,6 +85,7 @@ const NativeMapView = forwardRef<MapView, NativeMapViewProps>(function NativeMap
           key={d.userId}
           coordinate={{ latitude: d.latitude, longitude: d.longitude }}
           anchor={{ x: 0.5, y: 1 }}
+          onPress={() => onDriverPress?.(d)}
         >
           <View style={styles.markerColumn}>
             {d.vehiclePlate?.trim() ? (
@@ -120,7 +121,7 @@ const NativeMapView = forwardRef<MapView, NativeMapViewProps>(function NativeMap
                   {d.vehicleModel.trim()}
                 </Text>
               ) : null}
-              <Text style={styles.calloutHint}>Tap to book</Text>
+              <Text style={styles.calloutHint}>Tap for driver details</Text>
             </View>
           </Callout>
         </Marker>

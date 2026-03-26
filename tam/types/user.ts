@@ -13,4 +13,8 @@ export interface User {
   vehiclePlate?: string;
   /** Vehicle make/model — shown to passengers on map booking */
   vehicleModel?: string;
+  /** Average rating 1–5 (optional; set in Firebase when you add reviews) */
+  averageRating?: number;
+  /** Number of ratings contributing to averageRating */
+  ratingCount?: number;
 }

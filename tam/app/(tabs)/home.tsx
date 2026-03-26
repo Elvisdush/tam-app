@@ -12,12 +12,14 @@ import {
   ScrollView,
   Dimensions,
   KeyboardAvoidingView,
+  Image,
+  Linking,
 } from 'react-native';
 import MapView from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Menu, Crosshair, X, Radio, Shield } from 'lucide-react-native';
+import { Menu, Crosshair, X, Radio, Shield, Phone } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { useRideStore } from '@/store/ride-store';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
@@ -34,8 +36,23 @@ import {
   MIN_PRICE_MOTO_KIGALI_RWF,
 } from '@/lib/rwanda-passenger-pricing';
 import type { OnlineDriverMarker } from '@/types/online-driver';
+import type { User } from '@/types/user';
 
 const TAB_BAR_OFFSET = 52;
+
+const PLACEHOLDER_AVATAR =
+  'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
+
+function ratingLine(profile: User | undefined): string {
+  if (!profile?.averageRating || profile.averageRating <= 0) {
+    return 'No ratings yet';
+  }
+  const v = Math.min(5, Math.max(0, profile.averageRating));
+  const full = Math.round(v);
+  const stars = '★'.repeat(full) + '☆'.repeat(5 - full);
+  const c = profile.ratingCount;
+  return `${stars}  ${v.toFixed(1)}${c != null && c > 0 ? `  ·  ${c} rating${c === 1 ? '' : 's'}` : ''}`;
+}
 
 function pickupLineFromLocation(loc: {
   latitude: number;
@@ -52,6 +69,7 @@ export default function HomeScreen() {
   const mapRef = useRef<MapView>(null);
   const hasCenteredMapOnLoad = useRef(false);
   const user = useAuthStore((state) => state.user);
+  const users = useAuthStore((state) => state.users);
   const [from, setFrom] = useState('');
   /** When false, "From" stays synced to GPS / reverse-geocoded address */
   const [fromIsManual, setFromIsManual] = useState(false);
@@ -61,6 +79,8 @@ export default function HomeScreen() {
   const [selectedDestination, setSelectedDestination] = useState<RwandaDestination | null>(null);
 
   const [bookingDriver, setBookingDriver] = useState<OnlineDriverMarker | null>(null);
+  /** Passenger tapped a nearby driver pin — show profile sheet before booking */
+  const [driverDetailsDriver, setDriverDetailsDriver] = useState<OnlineDriverMarker | null>(null);
   /** actions = Book now / Later; schedule = date/time for Later */
   const [bookingStep, setBookingStep] = useState<'actions' | 'schedule'>('actions');
   const [scheduleDate, setScheduleDate] = useState(() => new Date(Date.now() + 60 * 60 * 1000));
@@ -366,20 +386,37 @@ export default function HomeScreen() {
     return true;
   };
 
-  const handleDriverPress = (driver: OnlineDriverMarker) => {
+  /** Open driver details (name, phone, ratings, fares) — then passenger can book */
+  const handleOpenDriverDetails = (driver: OnlineDriverMarker) => {
     if (user?.type !== 'passenger') return;
-    if (!validatePassengerSearchForBooking()) return;
+    setDriverDetailsDriver(driver);
+  };
+
+  /** Returns true if booking modal opened successfully */
+  const startBookingWithDriver = (driver: OnlineDriverMarker): boolean => {
+    if (user?.type !== 'passenger') return false;
+    if (!validatePassengerSearchForBooking()) return false;
     if (driver.transportType !== transportType) {
       Alert.alert(
         'Vehicle type',
         `This driver is a ${driver.transportType === 'car' ? 'taxi car' : 'taxi moto'}. Switch “Taxi moto or taxi car” above or choose another driver.`
       );
-      return;
+      return false;
     }
     setScheduleDate(new Date(Date.now() + 60 * 60 * 1000));
     setBookingStep('actions');
     setBookingDriver(driver);
+    return true;
   };
+
+  const handleBookFromDriverDetails = () => {
+    if (!driverDetailsDriver) return;
+    if (startBookingWithDriver(driverDetailsDriver)) {
+      setDriverDetailsDriver(null);
+    }
+  };
+
+  const closeDriverDetails = () => setDriverDetailsDriver(null);
 
   const onScheduleDateChange = (event: { type?: string }, date?: Date) => {
     if (Platform.OS === 'android') {
@@ -456,7 +493,7 @@ export default function HomeScreen() {
         currentLocation={currentLocation}
         nearbyDrivers={nearbyDrivers}
         userNearbyDriverCount={user?.type === 'passenger' ? nearbyDrivers.length : 0}
-        onDriverPress={user?.type === 'passenger' ? handleDriverPress : undefined}
+        onDriverPress={user?.type === 'passenger' ? handleOpenDriverDetails : undefined}
       />
 
       <View style={styles.overlay} pointerEvents="box-none">
@@ -798,6 +835,133 @@ export default function HomeScreen() {
             </View>
           </KeyboardAvoidingView>
         </View>
+      </Modal>
+
+      <Modal
+        visible={user?.type === 'passenger' && driverDetailsDriver !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={closeDriverDetails}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={closeDriverDetails}>
+          <Pressable style={styles.driverDetailCard} onPress={(e) => e.stopPropagation()}>
+            {driverDetailsDriver && (() => {
+              const d = driverDetailsDriver;
+              const profile = users.find((u) => u.id === d.userId);
+              const name =
+                profile?.username?.trim() || d.username?.trim() || 'Driver';
+              const phoneRaw = profile?.phone?.trim() ?? '';
+              const avatarUri =
+                profile?.profileImage && !profile.profileImage.startsWith('blob:')
+                  ? profile.profileImage
+                  : PLACEHOLDER_AVATAR;
+              const tripMinForDriver =
+                selectedDestination && d.transportType === transportType
+                  ? minPriceRwfForDestination(transportType, selectedDestination.id)
+                  : null;
+              const typeMismatch = d.transportType !== transportType;
+
+              return (
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={styles.driverDetailHeaderRow}>
+                    <Image source={{ uri: avatarUri }} style={styles.driverDetailAvatar} />
+                    <View style={styles.driverDetailHeaderText}>
+                      <Text style={styles.driverDetailName} numberOfLines={2}>
+                        {name}
+                        {d.isDemo ? (
+                          <Text style={styles.driverDetailDemo}> · Demo</Text>
+                        ) : null}
+                      </Text>
+                      <Text style={styles.driverDetailVehicle}>
+                        {d.transportType === 'car' ? 'Taxi car' : 'Taxi moto'}
+                        {d.vehiclePlate?.trim() ? ` · ${d.vehiclePlate.trim()}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {d.vehicleModel?.trim() ? (
+                    <Text style={styles.driverDetailMetaLine}>
+                      <Text style={styles.modalLabel}>Vehicle: </Text>
+                      {d.vehicleModel.trim()}
+                    </Text>
+                  ) : null}
+
+                  <View style={styles.driverDetailBlock}>
+                    <Text style={styles.driverDetailBlockTitle}>Phone</Text>
+                    {phoneRaw.length > 0 ? (
+                      <TouchableOpacity
+                        style={styles.driverPhoneRow}
+                        onPress={() => {
+                          const normalized = phoneRaw.replace(/[^\d+]/g, '');
+                          void Linking.openURL(`tel:${normalized}`);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Phone color="#2563eb" size={18} strokeWidth={2.2} style={{ marginRight: 8 }} />
+                        <Text style={styles.driverPhoneText}>{phoneRaw}</Text>
+                        <Text style={styles.driverPhoneTap}>Call</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.driverDetailMuted}>
+                        {d.isDemo ? 'Not available for demo drivers' : 'Not on file'}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.driverDetailBlock}>
+                    <Text style={styles.driverDetailBlockTitle}>Rider ratings</Text>
+                    <Text style={styles.driverRatingText}>{ratingLine(profile)}</Text>
+                  </View>
+
+                  <View style={styles.driverDetailBlock}>
+                    <Text style={styles.driverDetailBlockTitle}>Fare minimums (app rules)</Text>
+                    {d.transportType === 'motorbike' ? (
+                      <Text style={styles.driverFareLine}>
+                        Kigali (taxi moto): from {MIN_PRICE_MOTO_KIGALI_RWF.toLocaleString()} RWF
+                      </Text>
+                    ) : (
+                      <>
+                        <Text style={styles.driverFareLine}>
+                          Kigali (taxi car): from {MIN_PRICE_CAR_KIGALI_RWF.toLocaleString()} RWF
+                        </Text>
+                        <Text style={styles.driverFareLine}>
+                          Outside Kigali: from {MIN_PRICE_CAR_OUTSIDE_KIGALI_RWF.toLocaleString()} RWF
+                        </Text>
+                      </>
+                    )}
+                    {tripMinForDriver != null && (
+                      <Text style={styles.driverTripMin}>
+                        Your current trip minimum: {tripMinForDriver.toLocaleString()} RWF
+                      </Text>
+                    )}
+                  </View>
+
+                  {typeMismatch && (
+                    <Text style={styles.driverMismatch}>
+                      You have{' '}
+                      {transportType === 'car' ? 'Taxi car' : 'Taxi moto'} selected — switch vehicle type
+                      above to book this driver.
+                    </Text>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.modalPrimaryBtn}
+                    onPress={handleBookFromDriverDetails}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.modalPrimaryBtnText}>Book with this driver</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={closeDriverDetails}>
+                    <Text style={styles.modalCancelText}>Close</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              );
+            })()}
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal visible={bookingDriver !== null} animationType="fade" transparent>
@@ -1416,5 +1580,116 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 15,
     fontWeight: '600',
+  },
+  driverDetailCard: {
+    backgroundColor: 'white',
+    borderRadius: 18,
+    padding: 20,
+    maxHeight: '88%',
+    maxWidth: 400,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  driverDetailHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  driverDetailAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    marginRight: 14,
+    backgroundColor: '#e2e8f0',
+    borderWidth: 2,
+    borderColor: '#e0f2fe',
+  },
+  driverDetailHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  driverDetailName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  driverDetailDemo: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  driverDetailVehicle: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  driverDetailMetaLine: {
+    fontSize: 14,
+    color: '#334155',
+    marginBottom: 14,
+    lineHeight: 20,
+  },
+  driverDetailBlock: {
+    marginBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+  },
+  driverDetailBlockTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  driverPhoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  driverPhoneText: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  driverPhoneTap: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2563eb',
+  },
+  driverDetailMuted: {
+    fontSize: 15,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+  },
+  driverRatingText: {
+    fontSize: 16,
+    color: '#0f172a',
+    lineHeight: 24,
+  },
+  driverFareLine: {
+    fontSize: 15,
+    color: '#334155',
+    marginBottom: 6,
+    lineHeight: 22,
+  },
+  driverTripMin: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  driverMismatch: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#b45309',
+    backgroundColor: '#fffbeb',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 14,
+    overflow: 'hidden',
   },
 });

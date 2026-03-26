@@ -2,14 +2,18 @@ import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Image, KeyboardAvoidingView, Platform, Alert, Animated, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, Camera, Mic, Send, Play, Pause, MapPin, Navigation } from 'lucide-react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/auth-store';
 import { useChatStore } from '@/store/chat-store';
 import { useLocationStore } from '@/store/location-store';
 import * as ImagePicker from 'expo-image-picker';
 
+const PRIMARY = '#3498db';
+const PRIMARY_DARK = '#2980b9';
+const BG = '#EEF2F7';
+const BUBBLE_OTHER = '#FFFFFF';
 
 export default function ChatScreen() {
   const { id, name, profileImage, from, to, price } = useLocalSearchParams();
@@ -244,126 +248,146 @@ export default function ChatScreen() {
   const renderMessage = ({ item }: { item: any }) => {
     const isMyMessage = item.senderId === user?.id;
     const isPlaying = playingVoiceId === item.id;
-    
+    const partnerUri = chatPartner?.profileImage?.startsWith('blob:')
+      ? 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop'
+      : chatPartner?.profileImage ||
+        'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
+
+    const bubbleContent = (
+      <>
+        {item.type === 'image' ? (
+          <Image
+            source={{
+              uri: item.content?.startsWith('blob:')
+                ? 'https://images.unsplash.com/photo-1682686580391-615b1f28e6d1?q=80&w=1470&auto=format&fit=crop'
+                : item.content,
+            }}
+            style={styles.messageImage}
+            defaultSource={require('@/assets/images/icon.png')}
+          />
+        ) : item.type === 'location' ? (
+          <TouchableOpacity
+            style={styles.locationMessageContainer}
+            onPress={() => handleLocationPress(item)}
+            activeOpacity={0.8}
+          >
+            <MapPin color={isMyMessage ? '#fff' : PRIMARY} size={20} />
+            <View style={styles.locationTextContainer}>
+              <Text style={[styles.locationTitle, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+                {item.location?.address || 'Shared Location'}
+              </Text>
+              <Text style={[styles.locationSubtitle, isMyMessage ? styles.myMessageSub : styles.otherMessageSub]}>
+                Tap to view on map
+              </Text>
+            </View>
+            <Navigation color={isMyMessage ? '#fff' : PRIMARY} size={16} />
+          </TouchableOpacity>
+        ) : item.type === 'voice' ? (
+          <View style={styles.voiceMessageContainer}>
+            <TouchableOpacity style={styles.voicePlayButton} onPress={() => handleVoicePlayPause(item.id)}>
+              {isPlaying ? (
+                <Pause color={isMyMessage ? '#fff' : '#334155'} size={16} />
+              ) : (
+                <Play color={isMyMessage ? '#fff' : '#334155'} size={16} />
+              )}
+            </TouchableOpacity>
+            <View style={styles.voiceWaveform}>
+              {[...Array(8)].map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.waveformBar,
+                    {
+                      height: (i % 4) * 4 + 10,
+                      backgroundColor: isMyMessage ? 'rgba(255,255,255,0.75)' : 'rgba(51,65,85,0.35)',
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+            <Text style={[styles.voiceDuration, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+              {item.duration}s
+            </Text>
+          </View>
+        ) : (
+          <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+            {item.content}
+          </Text>
+        )}
+        <Text style={[styles.messageTime, isMyMessage ? styles.myMessageTime : styles.otherMessageTime]}>
+          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+      </>
+    );
+
     return (
-      <TouchableOpacity
-        style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer]}
-        onLongPress={() => handleMessageLongPress(item.id, item.senderId)}
-        delayLongPress={500}
-      >
+      <View style={[styles.messageRow, isMyMessage ? styles.messageRowMine : styles.messageRowTheirs]}>
         {!isMyMessage && (
-          <Image 
-            source={{ uri: chatPartner?.profileImage?.startsWith('blob:') ? 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop' : (chatPartner?.profileImage || 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop') }} 
+          <Image
+            source={{ uri: partnerUri }}
             style={styles.messageAvatar}
             defaultSource={require('@/assets/images/icon.png')}
           />
         )}
-        <View style={[styles.messageBubble, isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble]}>
-          {item.type === 'image' ? (
-            <Image 
-              source={{ uri: item.content?.startsWith('blob:') ? 'https://images.unsplash.com/photo-1682686580391-615b1f28e6d1?q=80&w=1470&auto=format&fit=crop' : item.content }} 
-              style={styles.messageImage}
-              defaultSource={require('@/assets/images/icon.png')}
-            />
-          ) : item.type === 'location' ? (
-            <TouchableOpacity 
-              style={styles.locationMessageContainer}
-              onPress={() => handleLocationPress(item)}
+        <TouchableOpacity
+          activeOpacity={0.92}
+          onLongPress={() => handleMessageLongPress(item.id, item.senderId)}
+          delayLongPress={500}
+          style={styles.messageTouchable}
+        >
+          {isMyMessage ? (
+            <LinearGradient
+              colors={[PRIMARY, PRIMARY_DARK]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.messageBubble, styles.myMessageBubble]}
             >
-              <MapPin color={isMyMessage ? "white" : "#007AFF"} size={20} />
-              <View style={styles.locationTextContainer}>
-                <Text style={[styles.locationTitle, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-                  {item.location?.address || 'Shared Location'}
-                </Text>
-                <Text style={[styles.locationSubtitle, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-                  Tap to view on map
-                </Text>
-              </View>
-              <Navigation color={isMyMessage ? "white" : "#007AFF"} size={16} />
-            </TouchableOpacity>
-          ) : item.type === 'voice' ? (
-            <View style={styles.voiceMessageContainer}>
-              <TouchableOpacity 
-                style={styles.voicePlayButton}
-                onPress={() => handleVoicePlayPause(item.id)}
-              >
-                {isPlaying ? (
-                  <Pause color={isMyMessage ? "white" : "#333"} size={16} />
-                ) : (
-                  <Play color={isMyMessage ? "white" : "#333"} size={16} />
-                )}
-              </TouchableOpacity>
-              <View style={styles.voiceWaveform}>
-                {[...Array(8)].map((_, i) => (
-                  <View 
-                    key={i} 
-                    style={[
-                      styles.waveformBar,
-                      { 
-                        height: Math.random() * 20 + 10,
-                        backgroundColor: isMyMessage ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.3)'
-                      }
-                    ]} 
-                  />
-                ))}
-              </View>
-              <Text style={[styles.voiceDuration, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-                {item.duration}s
-              </Text>
-            </View>
+              {bubbleContent}
+            </LinearGradient>
           ) : (
-            <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-              {item.content}
-            </Text>
+            <View style={[styles.messageBubble, styles.otherMessageBubble]}>{bubbleContent}</View>
           )}
-          <Text style={[styles.messageTime, isMyMessage ? styles.myMessageTime : styles.otherMessageTime]}>
-            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
     );
   };
+
+  const headerUri = chatPartner?.profileImage?.startsWith('blob:')
+    ? 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop'
+    : chatPartner?.profileImage ||
+      'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      
-      {/* Header */}
+
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <ChevronLeft color="#333" size={24} />
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} hitSlop={12}>
+          <ChevronLeft color="#0f172a" size={26} />
         </TouchableOpacity>
-        
-        <Image 
-          source={{ uri: chatPartner?.profileImage?.startsWith('blob:') ? 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop' : (chatPartner?.profileImage || 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop') }} 
+
+        <Image
+          source={{ uri: headerUri }}
           style={styles.headerAvatar}
           defaultSource={require('@/assets/images/icon.png')}
         />
-        
-        <Text style={styles.headerName}>{chatPartner?.username || 'Unknown User'}</Text>
-        
-        <TouchableOpacity 
+
+        <View style={styles.headerTextBlock}>
+          <Text style={styles.headerName} numberOfLines={1}>
+            {chatPartner?.username || 'Unknown User'}
+          </Text>
+          <Text style={styles.headerSubtitle}>In-app messages</Text>
+        </View>
+
+        <TouchableOpacity
           style={styles.shareLocationButton}
           onPress={handleShareLocation}
+          accessibilityLabel="Share location"
         >
-          <Svg width="28" height="28" viewBox="0 0 24 24">
-            <Circle cx="6" cy="6" r="3" fill="#007AFF" />
-            <Circle cx="18" cy="18" r="3" fill="#007AFF" />
-            <Path 
-              d="M 8.5 7.5 Q 12 10 15.5 16.5" 
-              fill="none" 
-              stroke="#007AFF" 
-              strokeWidth="2" 
-              strokeLinecap="round"
-            />
-          </Svg>
+          <MapPin color={PRIMARY} size={22} strokeWidth={2.2} />
         </TouchableOpacity>
       </View>
 
-      {/* Messages */}
       <FlatList
         data={chatMessages}
         keyExtractor={(item) => item.id}
@@ -373,46 +397,49 @@ export default function ChatScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Recording Indicator */}
       {isRecording && (
         <View style={styles.recordingIndicator}>
           <Animated.View style={[styles.recordingDot, { transform: [{ scale: recordingAnimation }] }]} />
-          <Text style={styles.recordingText}>Recording...</Text>
+          <Text style={styles.recordingText}>Recording…</Text>
         </View>
       )}
 
-      {/* Input Area */}
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.inputContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         <View style={styles.inputRow}>
-          <TouchableOpacity style={styles.inputIcon} onPress={handleCameraPress}>
-            <Camera color="#666" size={24} />
+          <TouchableOpacity style={styles.inputIcon} onPress={handleCameraPress} hitSlop={8}>
+            <Camera color="#64748b" size={24} />
           </TouchableOpacity>
-          
+
           <TextInput
             style={styles.textInput}
-            placeholder="Message..."
-            placeholderTextColor="#999"
+            placeholder="Message"
+            placeholderTextColor="#94a3b8"
             value={message}
             onChangeText={setMessage}
             multiline
           />
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[styles.inputIcon, isRecording && styles.recordingIcon]}
             onPressIn={handleMicPressIn}
             onPressOut={handleMicPressOut}
           >
-            <Mic color={isRecording ? "#ff4444" : "#666"} size={24} />
+            <Mic color={isRecording ? '#ef4444' : '#64748b'} size={24} />
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.sendButton}
-            onPress={handleSendMessage}
-          >
-            <Send color="white" size={20} />
+
+          <TouchableOpacity onPress={handleSendMessage} activeOpacity={0.85}>
+            <LinearGradient
+              colors={[PRIMARY, PRIMARY_DARK]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.sendButton}
+            >
+              <Send color="#fff" size={20} />
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -420,148 +447,207 @@ export default function ChatScreen() {
   );
 }
 
+const bubbleShadow =
+  Platform.OS === 'ios'
+    ? {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+      }
+    : { elevation: 2 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: BG,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+      },
+      default: { elevation: 2 },
+    }),
   },
   backButton: {
-    marginRight: 15,
+    marginRight: 4,
+    padding: 4,
   },
   headerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#e0f2fe',
+  },
+  headerTextBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   headerName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0f172a',
+    letterSpacing: -0.2,
+  },
+  headerSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#94a3b8',
   },
   shareLocationButton: {
-    padding: 6,
-    borderRadius: 20,
-    marginLeft: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
   },
 
   messagesList: {
     flex: 1,
   },
   messagesContent: {
-    padding: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
   },
-  messageContainer: {
+  messageRow: {
+    width: '100%',
     flexDirection: 'row',
-    marginBottom: 15,
     alignItems: 'flex-end',
+    marginBottom: 12,
   },
-  myMessageContainer: {
+  messageRowMine: {
     justifyContent: 'flex-end',
   },
-  otherMessageContainer: {
+  messageRowTheirs: {
     justifyContent: 'flex-start',
   },
+  messageTouchable: {
+    maxWidth: '82%',
+  },
   messageAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   messageBubble: {
-    maxWidth: '75%',
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 20,
   },
   myMessageBubble: {
-    backgroundColor: '#007AFF',
-    borderBottomRightRadius: 5,
+    borderBottomRightRadius: 6,
   },
   otherMessageBubble: {
-    backgroundColor: '#E5E5EA',
-    borderBottomLeftRadius: 5,
+    backgroundColor: BUBBLE_OTHER,
+    borderBottomLeftRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    ...bubbleShadow,
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   myMessageText: {
-    color: 'white',
+    color: '#fff',
   },
   otherMessageText: {
-    color: '#333',
+    color: '#0f172a',
+  },
+  myMessageSub: {
+    color: 'rgba(255,255,255,0.85)',
+  },
+  otherMessageSub: {
+    color: '#64748b',
   },
   messageImage: {
     width: 200,
     height: 150,
-    borderRadius: 10,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
   },
   recordingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
     paddingVertical: 10,
     marginHorizontal: 20,
-    borderRadius: 20,
-    marginBottom: 10,
+    borderRadius: 24,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
   },
   recordingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#ff4444',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ef4444',
     marginRight: 8,
   },
   recordingText: {
-    color: '#ff4444',
+    color: '#dc2626',
     fontSize: 14,
     fontWeight: '600',
   },
   inputContainer: {
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
+    backgroundColor: '#fff',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e2e8f0',
+    paddingBottom: Platform.OS === 'ios' ? 4 : 8,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: 15,
-    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   inputIcon: {
     padding: 8,
-    borderRadius: 20,
+    borderRadius: 22,
   },
   recordingIcon: {
-    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
   },
   textInput: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 20,
-    paddingHorizontal: 15,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 22,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 16,
-    maxHeight: 100,
+    maxHeight: 120,
+    marginHorizontal: 4,
+    color: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   sendButton: {
-    backgroundColor: '#007AFF',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 4,
   },
   voiceMessageContainer: {
     flexDirection: 'row',
@@ -580,23 +666,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    height: 20,
+    height: 22,
     marginRight: 8,
   },
   waveformBar: {
-    width: 2,
-    borderRadius: 1,
+    width: 3,
+    borderRadius: 2,
     marginHorizontal: 1,
   },
   voiceDuration: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   locationMessageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 200,
-    paddingVertical: 5,
+    paddingVertical: 4,
   },
   locationTextContainer: {
     flex: 1,
@@ -610,16 +696,16 @@ const styles = StyleSheet.create({
   },
   locationSubtitle: {
     fontSize: 12,
-    opacity: 0.8,
   },
   messageTime: {
-    fontSize: 10,
-    marginTop: 4,
+    fontSize: 11,
+    marginTop: 6,
+    fontWeight: '500',
   },
   myMessageTime: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255, 255, 255, 0.75)',
   },
   otherMessageTime: {
-    color: '#999',
+    color: '#94a3b8',
   },
 })
