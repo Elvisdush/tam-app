@@ -1,183 +1,537 @@
 import React from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, Alert } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  Image,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  Linking,
+  Platform,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { ChevronLeft } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Mail,
+  Phone,
+  Car,
+  Bike,
+  Star,
+  Shield,
+  UserCircle,
+  Edit3,
+  LogOut,
+  Trash2,
+  HelpCircle,
+  FileText,
+} from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 
+const PRIMARY = '#3498db';
+const PLACEHOLDER_AVATAR =
+  'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
+
+function ratingLine(avg?: number, count?: number): string | null {
+  if (avg == null || avg <= 0) return null;
+  const v = Math.min(5, Math.max(0, avg));
+  const full = Math.round(v);
+  const stars = '★'.repeat(full) + '☆'.repeat(5 - full);
+  const c = count != null && count > 0 ? ` · ${count} rating${count === 1 ? '' : 's'}` : '';
+  return `${stars}  ${v.toFixed(1)}${c}`;
+}
+
+type RowProps = {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onPress?: () => void;
+  hint?: string;
+};
+
+function InfoRow({ icon, label, value, onPress, hint }: RowProps) {
+  const content = (
+    <>
+      <View style={styles.rowIconWrap}>{icon}</View>
+      <View style={styles.rowTextWrap}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.rowValue} numberOfLines={onPress ? 2 : 4}>
+          {value}
+        </Text>
+        {hint ? <Text style={styles.rowHint}>{hint}</Text> : null}
+      </View>
+      {onPress ? <ChevronRight color="#94a3b8" size={20} strokeWidth={2.2} /> : null}
+    </>
+  );
+  if (onPress) {
+    return (
+      <TouchableOpacity style={styles.infoRow} onPress={onPress} activeOpacity={0.65}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  return <View style={styles.infoRow}>{content}</View>;
+}
+
 export default function ProfileScreen() {
-  const user = useAuthStore(state => state.user);
-  const logout = useAuthStore(state => state.logout);
-  
+  const navigation = useNavigation();
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+
   const handleLogout = () => {
     logout();
     router.replace('/');
   };
-  
+
   const handleDeleteAccount = () => {
     Alert.alert(
-      "Delete Account",
-      "Are you sure you want to delete your account? This action cannot be undone.",
+      'Delete account',
+      'Are you sure? This cannot be undone from the app. Contact support if you need help.',
       [
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: "Cancel",
-          style: "cancel"
-        },
-        { 
-          text: "Delete", 
+          text: 'Delete',
+          style: 'destructive',
           onPress: () => {
             logout();
             router.replace('/auth/sign-in');
           },
-          style: "destructive"
-        }
+        },
       ]
     );
   };
-  
-  const handleEditProfile = () => {
-    router.push('/profile/edit');
+
+  const openTel = (raw: string) => {
+    const n = raw.replace(/[^\d+]/g, '');
+    void Linking.openURL(`tel:${n}`);
+  };
+
+  const openMail = (email: string) => {
+    void Linking.openURL(`mailto:${encodeURIComponent(email)}`);
   };
 
   if (!user) return null;
 
+  const avatarUri = user.profileImage?.startsWith('blob:') ? PLACEHOLDER_AVATAR : user.profileImage || PLACEHOLDER_AVATAR;
+  const isDriver = user.type === 'driver';
+  const ratingStr = ratingLine(user.averageRating, user.ratingCount);
+  const bioText = user.bio?.trim();
+  const iceName = user.emergencyContactName?.trim();
+  const icePhone = user.emergencyContactPhone?.trim();
+
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-      <Image
-        source={{ uri: 'https://images.unsplash.com/photo-1682686580391-615b1f28e6d1?q=80&w=1470&auto=format&fit=crop' }}
-        style={styles.backgroundImage}
-      />
-      
-      <TouchableOpacity 
-        style={styles.backButton}
-        onPress={() => router.back()}
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="dark" />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <ChevronLeft color="white" size={24} />
-      </TouchableOpacity>
-      
-      <View style={styles.profileHeader}>
-        <Image 
-          source={{ uri: user.profileImage?.startsWith('blob:') ? 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop' : user.profileImage }} 
-          style={styles.profileImage}
-          defaultSource={require('@/assets/images/icon.png')}
-        />
-      </View>
-      
-      <View style={styles.detailsContainer}>
-        <Text style={styles.detailsTitle}>My Details</Text>
-        
-        <Text style={styles.username}>{user.username}</Text>
-        <Text style={styles.email}>{user.email}</Text>
-        <Text style={styles.phone}>{user.phone}</Text>
-        
-        <TouchableOpacity 
-          style={styles.editButton}
-          onPress={handleEditProfile}
-        >
-          <Text style={styles.editButtonText}>Edit Account</Text>
-        </TouchableOpacity>
-        
-        <View style={styles.accountActions}>
-          <TouchableOpacity onPress={handleDeleteAccount}>
-            <Text style={styles.deleteAccountText}>Delete my account</Text>
+        <LinearGradient colors={['#e8f4fc', '#f0f9ff', '#f8fafc']} style={styles.hero}>
+          <View style={styles.heroTop}>
+            {navigation.canGoBack() ? (
+              <TouchableOpacity
+                style={styles.heroBack}
+                onPress={() => router.back()}
+                hitSlop={12}
+                accessibilityLabel="Back"
+              >
+                <ChevronLeft color="#0f172a" size={26} strokeWidth={2.2} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.heroBackPlaceholder} />
+            )}
+            <Text style={styles.heroTitle}>Profile</Text>
+            <View style={styles.heroBackPlaceholder} />
+          </View>
+
+          <View style={styles.avatarRing}>
+            <Image source={{ uri: avatarUri }} style={styles.avatar} defaultSource={require('@/assets/images/icon.png')} />
+          </View>
+          <Text style={styles.displayName}>{user.username}</Text>
+          <View style={styles.badgeRow}>
+            <View style={[styles.roleBadge, isDriver ? styles.badgeDriver : styles.badgePassenger]}>
+              <View style={styles.roleBadgeIcon}>
+                {isDriver ? <Car color="#fff" size={14} strokeWidth={2.5} /> : <UserCircle color="#fff" size={14} strokeWidth={2.5} />}
+              </View>
+              <Text style={styles.roleBadgeText}>{isDriver ? 'Driver' : 'Passenger'}</Text>
+            </View>
+          </View>
+          {ratingStr ? (
+            <View style={styles.ratingPill}>
+              <Star color="#ca8a04" size={16} strokeWidth={2.2} />
+              <Text style={styles.ratingPillText}>{ratingStr}</Text>
+            </View>
+          ) : null}
+        </LinearGradient>
+
+        <View style={styles.sheet}>
+          <Text style={styles.sectionHeading}>Account</Text>
+          <View style={styles.card}>
+            <InfoRow
+              icon={<Mail color={PRIMARY} size={20} strokeWidth={2.2} />}
+              label="Email"
+              value={user.email}
+              onPress={() => openMail(user.email)}
+              hint="Tap to open mail app"
+            />
+            <View style={styles.cardDivider} />
+            <InfoRow
+              icon={<Phone color={PRIMARY} size={20} strokeWidth={2.2} />}
+              label="Phone"
+              value={user.phone || '—'}
+              onPress={user.phone ? () => openTel(user.phone) : undefined}
+              hint={user.phone ? 'Tap to call' : undefined}
+            />
+          </View>
+
+          {isDriver ? (
+            <>
+              <Text style={styles.sectionHeading}>Vehicle</Text>
+              <View style={styles.card}>
+                <InfoRow
+                  icon={
+                    user.vehicleType === 'car' ? (
+                      <Car color={PRIMARY} size={20} strokeWidth={2.2} />
+                    ) : (
+                      <Bike color={PRIMARY} size={20} strokeWidth={2.2} />
+                    )
+                  }
+                  label="Type"
+                  value={user.vehicleType === 'car' ? 'Taxi car' : 'Taxi moto'}
+                />
+                <View style={styles.cardDivider} />
+                <InfoRow
+                  icon={<FileText color={PRIMARY} size={20} strokeWidth={2.2} />}
+                  label="Plate"
+                  value={user.vehiclePlate?.trim() || '—'}
+                />
+                <View style={styles.cardDivider} />
+                <InfoRow
+                  icon={<Car color={PRIMARY} size={20} strokeWidth={2.2} />}
+                  label="Model"
+                  value={user.vehicleModel?.trim() || '—'}
+                />
+              </View>
+            </>
+          ) : null}
+
+          <Text style={styles.sectionHeading}>About you</Text>
+          <View style={styles.card}>
+            <View style={styles.bioBlock}>
+              <Text style={styles.rowLabel}>Bio</Text>
+              <Text style={styles.bioText}>
+                {bioText || 'Add a short bio in Edit profile — helps others recognize you.'}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.sectionHeading}>Safety</Text>
+          <View style={styles.card}>
+            <InfoRow
+              icon={<Shield color={PRIMARY} size={20} strokeWidth={2.2} />}
+              label="Emergency contact"
+              value={
+                iceName || icePhone
+                  ? [iceName, icePhone].filter(Boolean).join(' · ')
+                  : 'Not set — add in Edit profile'
+              }
+            />
+          </View>
+
+          <Text style={styles.sectionHeading}>Support</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.infoRow}
+              onPress={() =>
+                Alert.alert(
+                  'Help',
+                  'For trip issues, use in-app chat with your driver. For account help, contact support by email from Edit profile.'
+                )
+              }
+              activeOpacity={0.65}
+            >
+              <View style={styles.rowIconWrap}>
+                <HelpCircle color={PRIMARY} size={20} strokeWidth={2.2} />
+              </View>
+              <View style={styles.rowTextWrap}>
+                <Text style={styles.rowLabel}>Help & FAQ</Text>
+                <Text style={styles.rowHint}>Safety, trips, and account</Text>
+              </View>
+              <ChevronRight color="#94a3b8" size={20} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.editCta} onPress={() => router.push('/profile/edit')} activeOpacity={0.88}>
+            <Edit3 color="#fff" size={20} strokeWidth={2.2} style={styles.editCtaIcon} />
+            <Text style={styles.editCtaText}>Edit profile</Text>
           </TouchableOpacity>
-          
-          <Text style={styles.divider}>|</Text>
-          
-          <TouchableOpacity onPress={handleLogout}>
-            <Text style={styles.logoutText}>Log out</Text>
-          </TouchableOpacity>
+
+          <View style={styles.footerActions}>
+            <TouchableOpacity style={[styles.footerBtn, styles.footerBtnSpaced]} onPress={handleLogout} activeOpacity={0.8}>
+              <LogOut color="#475569" size={20} strokeWidth={2.2} style={styles.footerIcon} />
+              <Text style={styles.footerBtnText}>Log out</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.footerBtn} onPress={handleDeleteAccount} activeOpacity={0.8}>
+              <Trash2 color="#dc2626" size={20} strokeWidth={2.2} style={styles.footerIcon} />
+              <Text style={styles.footerDangerText}>Delete account</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.versionHint}>
+            TAM · {Platform.OS === 'ios' ? 'iOS' : Platform.OS === 'android' ? 'Android' : 'App'}
+          </Text>
         </View>
-      </View>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#f8fafc',
   },
-  backgroundImage: {
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 32,
+  },
+  hero: {
+    paddingBottom: 28,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+  },
+  heroTop: {
     width: '100%',
-    height: 200,
-    position: 'absolute',
-    top: 0,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    zIndex: 10,
-  },
-  profileHeader: {
-    alignItems: 'center',
-    marginTop: 120,
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 3,
-    borderColor: 'white',
-  },
-  detailsContainer: {
-    backgroundColor: 'rgba(50, 50, 50, 0.8)',
-    marginTop: 20,
-    marginHorizontal: 20,
-    borderRadius: 15,
-    padding: 20,
-    alignItems: 'center',
-  },
-  detailsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 15,
-  },
-  username: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: 'white',
-    marginBottom: 5,
-  },
-  email: {
-    fontSize: 16,
-    color: 'white',
-    marginBottom: 5,
-  },
-  phone: {
-    fontSize: 16,
-    color: 'white',
-    marginBottom: 20,
-  },
-  editButton: {
-    backgroundColor: '#333',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 30,
-    marginBottom: 20,
-  },
-  editButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  accountActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  deleteAccountText: {
-    color: '#ff6b6b',
+  heroBack: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBackPlaceholder: {
+    width: 44,
+    height: 44,
+  },
+  heroTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  avatarRing: {
+    padding: 4,
+    borderRadius: 64,
+    backgroundColor: '#fff',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    marginBottom: 12,
+  },
+  avatar: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: '#e2e8f0',
+  },
+  displayName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  badgeRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+  },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  roleBadgeIcon: {
+    marginRight: 6,
+  },
+  badgeDriver: {
+    backgroundColor: '#16a34a',
+  },
+  badgePassenger: {
+    backgroundColor: PRIMARY,
+  },
+  roleBadgeText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  ratingPill: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  ratingPillText: {
+    marginLeft: 8,
     fontSize: 14,
+    fontWeight: '600',
+    color: '#0f172a',
   },
-  divider: {
-    marginHorizontal: 10,
-    color: '#999',
+  sheet: {
+    marginTop: -12,
+    paddingHorizontal: 16,
   },
-  logoutText: {
-    color: 'white',
-    fontSize: 14,
+  sectionHeading: {
+    marginTop: 20,
+    marginBottom: 10,
+    marginLeft: 4,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#e2e8f0',
+    marginLeft: 56,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  rowIconWrap: {
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowTextWrap: {
+    flex: 1,
+    marginLeft: 8,
+    minWidth: 0,
+  },
+  rowLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  },
+  rowValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
+    lineHeight: 22,
+  },
+  rowHint: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  bioBlock: {
+    padding: 16,
+  },
+  bioText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#475569',
+  },
+  editCta: {
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f172a',
+    paddingVertical: 16,
+    borderRadius: 14,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  editCtaIcon: {
+    marginRight: 10,
+  },
+  editCtaText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  footerActions: {
+    marginTop: 20,
+  },
+  footerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  footerBtnSpaced: {
+    marginBottom: 12,
+  },
+  footerIcon: {
+    marginRight: 10,
+  },
+  footerBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  footerDangerText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#dc2626',
+  },
+  versionHint: {
+    marginTop: 24,
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
   },
 });

@@ -1,22 +1,39 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  Image,
+  TouchableOpacity,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft } from 'lucide-react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '@/store/auth-store';
 
 export default function EditProfileScreen() {
-  const user = useAuthStore(state => state.user);
-  const updateUser = useAuthStore(state => state.updateUser);
-  
+  const user = useAuthStore((state) => state.user);
+  const updateUser = useAuthStore((state) => state.updateUser);
+
   const [username, setUsername] = useState(user?.username || '');
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
+  const [bio, setBio] = useState(user?.bio?.trim() || '');
+  const [emergencyContactName, setEmergencyContactName] = useState(user?.emergencyContactName?.trim() || '');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState(user?.emergencyContactPhone?.trim() || '');
   const [profileImage, setProfileImage] = useState<string | null>(user?.profileImage || null);
   const [vehicleImage, setVehicleImage] = useState<string | null>(user?.vehicleImage || null);
-  
+  const [vehicleType, setVehicleType] = useState<'car' | 'motorbike'>(user?.vehicleType ?? 'motorbike');
+  const [vehiclePlate, setVehiclePlate] = useState(user?.vehiclePlate?.trim() || '');
+  const [vehicleModel, setVehicleModel] = useState(user?.vehicleModel?.trim() || '');
+
   const pickImage = async (type: 'profile' | 'vehicle') => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -33,119 +50,193 @@ export default function EditProfileScreen() {
       }
     }
   };
-  
+
   const handleSaveChanges = () => {
-    if (user && username && email && phone) {
-      updateUser({
-        ...user,
-        username,
-        email,
-        phone,
-        profileImage: profileImage || '',
-        ...(user.type === 'driver' && vehicleImage ? { vehicleImage } : {}),
-      });
-      router.back();
-    }
+    if (!user || !username?.trim() || !email?.trim() || !phone?.trim()) return;
+    updateUser({
+      ...user,
+      username: username.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      profileImage: profileImage || '',
+      bio: bio.trim() || undefined,
+      emergencyContactName: emergencyContactName.trim() || undefined,
+      emergencyContactPhone: emergencyContactPhone.trim() || undefined,
+      ...(user.type === 'driver'
+        ? {
+            vehicleType,
+            vehiclePlate: vehiclePlate.trim() || undefined,
+            vehicleModel: vehicleModel.trim() || undefined,
+            ...(vehicleImage ? { vehicleImage } : {}),
+          }
+        : {}),
+    });
+    router.back();
   };
 
   if (!user) return null;
 
+  const isDriver = user.type === 'driver';
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="light" />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="dark" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1682686580391-615b1f28e6d1?q=80&w=1470&auto=format&fit=crop' }}
-            style={styles.backgroundImage}
-          />
-          
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <ChevronLeft color="white" size={24} />
-          </TouchableOpacity>
-          
-          <View style={styles.formContainer}>
-            <TouchableOpacity 
-              style={styles.photoContainer} 
-              onPress={() => pickImage('profile')}
-            >
-              {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.profileImage} />
-              ) : (
-                <View style={styles.addPhotoCircle}>
-                  <Text style={styles.addPhotoText}>Change{'\n'}Photo</Text>
-                </View>
-              )}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <LinearGradient colors={['#e8f4fc', '#f8fafc']} style={styles.hero}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} hitSlop={12}>
+              <ChevronLeft color="#0f172a" size={26} strokeWidth={2.2} />
             </TouchableOpacity>
-            
-            {user.type === 'driver' && (
-              <TouchableOpacity 
-                style={styles.photoContainer} 
-                onPress={() => pickImage('vehicle')}
-              >
-                {vehicleImage ? (
-                  <Image source={{ uri: vehicleImage }} style={styles.vehicleImage} />
+            <Text style={styles.heroTitle}>Edit profile</Text>
+            <Text style={styles.heroSubtitle}>Update how you appear in the app</Text>
+          </LinearGradient>
+
+          <View style={styles.formWrap}>
+            <View style={styles.avatarRow}>
+              <TouchableOpacity style={styles.photoTouch} onPress={() => pickImage('profile')} activeOpacity={0.85}>
+                {profileImage ? (
+                  <Image source={{ uri: profileImage }} style={styles.profileImage} />
                 ) : (
                   <View style={styles.addPhotoCircle}>
-                    <Text style={styles.addPhotoText}>Change{'\n'}Vehicle Photo</Text>
+                    <Text style={styles.addPhotoText}>Add{'\n'}photo</Text>
                   </View>
                 )}
               </TouchableOpacity>
-            )}
-            
+              {isDriver && (
+                <TouchableOpacity
+                  style={[styles.photoTouch, styles.photoTouchSecond]}
+                  onPress={() => pickImage('vehicle')}
+                  activeOpacity={0.85}
+                >
+                  {vehicleImage ? (
+                    <Image source={{ uri: vehicleImage }} style={styles.vehicleImage} />
+                  ) : (
+                    <View style={[styles.addPhotoCircle, styles.vehicleCircle]}>
+                      <Text style={styles.addPhotoText}>Vehicle{'\n'}photo</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <Text style={styles.fieldLabel}>Display name</Text>
             <TextInput
               style={styles.input}
-              placeholder="User name"
-              placeholderTextColor="#999"
+              placeholder="Your name"
+              placeholderTextColor="#94a3b8"
               value={username}
               onChangeText={setUsername}
             />
-            
+
+            <Text style={styles.fieldLabel}>Email</Text>
             <TextInput
               style={styles.input}
               placeholder="Email"
-              placeholderTextColor="#999"
+              placeholderTextColor="#94a3b8"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
-            
+
+            <Text style={styles.fieldLabel}>Phone</Text>
             <TextInput
               style={styles.input}
-              placeholder="Change Phone Number"
-              placeholderTextColor="#999"
+              placeholder="Phone number"
+              placeholderTextColor="#94a3b8"
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
             />
-            
-            <TouchableOpacity 
-              style={styles.saveButton}
-              onPress={handleSaveChanges}
-            >
+
+            <Text style={styles.fieldLabel}>Bio (optional)</Text>
+            <TextInput
+              style={[styles.input, styles.inputMultiline]}
+              placeholder="A short line about you"
+              placeholderTextColor="#94a3b8"
+              value={bio}
+              onChangeText={setBio}
+              multiline
+              maxLength={280}
+            />
+
+            <Text style={styles.sectionTitle}>Emergency contact (optional)</Text>
+            <Text style={styles.sectionHint}>Someone we can reach if something goes wrong on a trip.</Text>
+            <Text style={styles.fieldLabel}>Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Full name"
+              placeholderTextColor="#94a3b8"
+              value={emergencyContactName}
+              onChangeText={setEmergencyContactName}
+            />
+            <Text style={styles.fieldLabel}>Phone</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Phone number"
+              placeholderTextColor="#94a3b8"
+              value={emergencyContactPhone}
+              onChangeText={setEmergencyContactPhone}
+              keyboardType="phone-pad"
+            />
+
+            {isDriver && (
+              <>
+                <Text style={styles.sectionTitle}>Vehicle</Text>
+                <View style={styles.vehicleTypeRow}>
+                  <TouchableOpacity
+                    style={[styles.typeChip, vehicleType === 'motorbike' && styles.typeChipOn]}
+                    onPress={() => setVehicleType('motorbike')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.typeChipText, vehicleType === 'motorbike' && styles.typeChipTextOn]}>Taxi moto</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.typeChip, vehicleType === 'car' && styles.typeChipOn]}
+                    onPress={() => setVehicleType('car')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.typeChipText, vehicleType === 'car' && styles.typeChipTextOn]}>Taxi car</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.fieldLabel}>License plate</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. RAA 123 A"
+                  placeholderTextColor="#94a3b8"
+                  value={vehiclePlate}
+                  onChangeText={setVehiclePlate}
+                  autoCapitalize="characters"
+                />
+                <Text style={styles.fieldLabel}>Make / model</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Toyota Corolla"
+                  placeholderTextColor="#94a3b8"
+                  value={vehicleModel}
+                  onChangeText={setVehicleModel}
+                />
+              </>
+            )}
+
+            <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges} activeOpacity={0.88}>
               <Text style={styles.saveButtonText}>Save changes</Text>
             </TouchableOpacity>
-            
-            {user.type === 'passenger' && (
-              <View style={styles.bottomOptions}>
-                <TouchableOpacity onPress={() => router.push('/auth/register/driver')}>
-                  <Text style={styles.registerRiderText}>Register as Rider</Text>
-                </TouchableOpacity>
-                
-                <Text style={styles.divider}>|</Text>
-                
-                <TouchableOpacity>
-                  <Text style={styles.contactText}>Contact us</Text>
-                </TouchableOpacity>
-              </View>
+
+            {!isDriver && (
+              <TouchableOpacity style={styles.secondaryLink} onPress={() => router.push('/auth/register/driver')}>
+                <Text style={styles.secondaryLinkText}>Register as driver</Text>
+              </TouchableOpacity>
             )}
+
+            <View style={styles.bottomSpacer} />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -156,104 +247,177 @@ export default function EditProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#f8fafc',
   },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContent: {
-    flexGrow: 1,
+    paddingBottom: 40,
   },
-  backgroundImage: {
-    width: '100%',
-    height: 200,
-    position: 'absolute',
-    top: 0,
+  hero: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
   backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    zIndex: 10,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    padding: 4,
   },
-  formContainer: {
-    marginTop: 120,
-    marginHorizontal: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 15,
-    padding: 20,
-    alignItems: 'center',
+  heroTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: -0.3,
   },
-  photoContainer: {
-    marginBottom: 20,
+  heroSubtitle: {
+    marginTop: 6,
+    fontSize: 15,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  formWrap: {
+    marginTop: 8,
+    paddingHorizontal: 20,
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  photoTouch: {},
+  photoTouchSecond: {
+    marginLeft: 16,
   },
   addPhotoCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'white',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderStyle: 'dashed',
+  },
+  vehicleCircle: {
+    borderColor: '#bbf7d0',
   },
   addPhotoText: {
-    color: '#333',
-    fontSize: 14,
+    color: '#64748b',
+    fontSize: 13,
+    fontWeight: '700',
     textAlign: 'center',
   },
   profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: '#e2e8f0',
   },
   vehicleImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: '#bbf7d0',
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginTop: 4,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
     width: '100%',
-    padding: 15,
-    borderRadius: 30,
-    marginBottom: 15,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 14,
     fontSize: 16,
+    color: '#0f172a',
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: '#e2e8f0',
+  },
+  inputMultiline: {
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
+  sectionTitle: {
+    marginTop: 8,
+    marginBottom: 6,
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  sectionHint: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  vehicleTypeRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  typeChip: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  typeChipOn: {
+    borderColor: '#3498db',
+    backgroundColor: '#eff6ff',
+  },
+  typeChipText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  typeChipTextOn: {
+    color: '#1d4ed8',
   },
   saveButton: {
-    backgroundColor: '#333',
-    paddingVertical: 15,
-    borderRadius: 30,
+    backgroundColor: '#0f172a',
+    paddingVertical: 16,
+    borderRadius: 14,
     width: '100%',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 20,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   saveButtonText: {
     color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '800',
   },
-  bottomOptions: {
-    flexDirection: 'row',
-    marginTop: 20,
+  secondaryLink: {
+    marginTop: 18,
     alignItems: 'center',
   },
-  registerRiderText: {
-    color: '#333',
-    fontSize: 14,
+  secondaryLinkText: {
+    color: '#3498db',
+    fontSize: 15,
+    fontWeight: '700',
   },
-  divider: {
-    marginHorizontal: 10,
-    color: '#666',
-  },
-  contactText: {
-    color: '#333',
-    fontSize: 14,
+  bottomSpacer: {
+    height: 24,
   },
 });
