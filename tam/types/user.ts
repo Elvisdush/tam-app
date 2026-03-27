@@ -17,4 +17,10 @@ export interface User {
   averageRating?: number;
   /** Number of ratings contributing to averageRating */
   ratingCount?: number;
+  /** Short bio — shown on profile */
+  bio?: string;
+  /** ICE — name (optional) */
+  emergencyContactName?: string;
+  /** ICE — phone (optional) */
+  emergencyContactPhone?: string;
 }
