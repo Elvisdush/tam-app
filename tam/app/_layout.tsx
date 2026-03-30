@@ -49,6 +49,7 @@ function RootLayoutNav() {
       <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="nearby" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="profile/edit" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="driver-contact" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="rides/index" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="rides/post" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="rides/track" options={{ animation: 'slide_from_right' }} />
