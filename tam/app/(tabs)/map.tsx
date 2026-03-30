@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/auth-store';
 import NativeMapViewFull from '@/components/NativeMapViewFull';
 import NextManeuverBar from '@/components/navigation/NextManeuverBar';
 import { getNearbyTrafficLights } from '@/constants/traffic-light-locations';
+import { getNearbySpeedCameras } from '@/constants/speed-camera-locations';
 import { getNavigationGuidance } from '@/lib/navigation/guidance';
 import { useNavigationPose } from '@/hooks/useNavigationPose';
 import { buildRwandaSuggestions } from '@/lib/rwanda-destination-search';
@@ -66,8 +67,14 @@ export default function MapScreen() {
   const sharedLat = latitude ? parseFloat(latitude as string) : null;
   const sharedLng = longitude ? parseFloat(longitude as string) : null;
 
+  const ROAD_ALERT_RADIUS_KM = 10;
+
   const nearbyTrafficLights = currentLocation
-    ? getNearbyTrafficLights(currentLocation.latitude, currentLocation.longitude, 8)
+    ? getNearbyTrafficLights(currentLocation.latitude, currentLocation.longitude, ROAD_ALERT_RADIUS_KM)
+    : [];
+
+  const nearbySpeedCameras = currentLocation
+    ? getNearbySpeedCameras(currentLocation.latitude, currentLocation.longitude, ROAD_ALERT_RADIUS_KM)
     : [];
   
   useEffect(() => {
@@ -233,6 +240,7 @@ export default function MapScreen() {
             userHeading={navHeading}
             satelliteMode={isNavigationMode}
             trafficLights={nearbyTrafficLights}
+            speedCameras={nearbySpeedCameras}
           />
           </View>
         </TouchableWithoutFeedback>
@@ -409,6 +417,26 @@ export default function MapScreen() {
               <Navigation color="#fff" size={22} />
               <Text style={styles.wazeGoText}>Start</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {!isNavigationMode && currentLocation && (
+          <View style={styles.roadAlertLegend} pointerEvents="none">
+            <View style={styles.legendRow}>
+              <View style={styles.legendTrafficLight}>
+                <View style={[styles.legendDot, styles.legendRed]} />
+                <View style={[styles.legendDot, styles.legendYellow]} />
+                <View style={[styles.legendDot, styles.legendGreen]} />
+              </View>
+              <Text style={styles.legendText}>Traffic lights</Text>
+            </View>
+            <View style={styles.legendRow}>
+              <View style={styles.legendCamera}>
+                <View style={styles.legendCamLens} />
+              </View>
+              <Text style={styles.legendText}>Speed cameras</Text>
+            </View>
+            <Text style={styles.legendHint}>Approximate pins — stay alert</Text>
           </View>
         )}
 
@@ -637,6 +665,65 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#fff',
+  },
+  roadAlertLegend: {
+    position: 'absolute',
+    bottom: 100,
+    left: 12,
+    maxWidth: 200,
+    backgroundColor: 'rgba(15,23,42,0.88)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  legendTrafficLight: {
+    flexDirection: 'column',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 4,
+    padding: 3,
+    gap: 2,
+  },
+  legendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  legendRed: { backgroundColor: '#ef4444' },
+  legendYellow: { backgroundColor: '#eab308' },
+  legendGreen: { backgroundColor: '#22c55e' },
+  legendCamera: {
+    width: 22,
+    height: 18,
+    borderRadius: 4,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#94a3b8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legendCamLens: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#64748b',
+  },
+  legendText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  legendHint: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 2,
   },
   reportButton: {
     position: 'absolute',

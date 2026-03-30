@@ -75,6 +75,72 @@ interface TrafficLightMarker {
   distanceKm?: number;
   intersection?: string;
 }
+
+interface SpeedCameraMarker {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  distanceKm?: number;
+  road?: string;
+}
+
+const speedCameraMarkerStyles = StyleSheet.create({
+  cameraRoot: {
+    alignItems: 'center',
+  },
+  cameraBody: {
+    width: 36,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#1e293b',
+    borderWidth: 2,
+    borderColor: '#94a3b8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  cameraLens: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#0f172a',
+    borderWidth: 2,
+    borderColor: '#64748b',
+  },
+  cameraLed: {
+    position: 'absolute',
+    top: 3,
+    right: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
+  },
+  cameraLabel: {
+    marginTop: 2,
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: 0.5,
+  },
+});
+
+function SpeedCameraMapIcon() {
+  return (
+    <View style={speedCameraMarkerStyles.cameraRoot} pointerEvents="none">
+      <View style={speedCameraMarkerStyles.cameraBody}>
+        <View style={speedCameraMarkerStyles.cameraLens} />
+        <View style={speedCameraMarkerStyles.cameraLed} />
+      </View>
+      <Text style={speedCameraMarkerStyles.cameraLabel}>CAM</Text>
+    </View>
+  );
+}
 interface Location {
   latitude: number;
   longitude: number;
@@ -108,6 +174,8 @@ interface NativeMapViewFullProps {
   satelliteMode?: boolean;
   onRouteUpdate?: () => void;
   trafficLights?: TrafficLightMarker[];
+  /** Speed / enforcement camera pins (approximate locations for awareness) */
+  speedCameras?: SpeedCameraMarker[];
 }
 
 export default function NativeMapViewFull({
@@ -123,6 +191,7 @@ export default function NativeMapViewFull({
   satelliteMode = false,
   onRouteUpdate,
   trafficLights = [],
+  speedCameras = [],
 }: NativeMapViewFullProps) {
   const mapRef = useRef<MapView>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Array<{ latitude: number; longitude: number }>>([]);
@@ -401,15 +470,40 @@ export default function NativeMapViewFull({
         <Marker
           key={tl.id}
           coordinate={{ latitude: tl.latitude, longitude: tl.longitude }}
-          title={`Traffic light - ${tl.name}`}
-          description={tl.intersection ? String(tl.intersection) : undefined}
+          title={`Traffic light — ${tl.name}`}
+          description={
+            tl.intersection
+              ? `${tl.intersection}${tl.distanceKm != null ? ` · ~${tl.distanceKm.toFixed(1)} km` : ''}`
+              : tl.distanceKm != null
+                ? `~${tl.distanceKm.toFixed(1)} km away`
+                : undefined
+          }
           anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
         >
           <View style={styles.trafficLightMarker}>
             <View style={[styles.trafficLightDot, styles.trafficRed]} />
             <View style={[styles.trafficLightDot, styles.trafficYellow]} />
             <View style={[styles.trafficLightDot, styles.trafficGreen]} />
           </View>
+        </Marker>
+      ))}
+      {speedCameras.map((sc) => (
+        <Marker
+          key={sc.id}
+          coordinate={{ latitude: sc.latitude, longitude: sc.longitude }}
+          title={`Speed camera — ${sc.name}`}
+          description={
+            sc.road
+              ? `${sc.road}${sc.distanceKm != null ? ` · ~${sc.distanceKm.toFixed(1)} km` : ''}`
+              : sc.distanceKm != null
+                ? `~${sc.distanceKm.toFixed(1)} km away`
+                : 'Stay within speed limits'
+          }
+          anchor={{ x: 0.5, y: 1 }}
+          tracksViewChanges={false}
+        >
+          <SpeedCameraMapIcon />
         </Marker>
       ))}
     </MapView>
