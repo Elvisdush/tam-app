@@ -1,6 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Image, KeyboardAvoidingView, Platform, Alert, Animated, Share } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  Platform,
+  Alert,
+  Animated,
+  Share,
+  Keyboard,
+  Pressable,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, Camera, Mic, Send, Play, Pause, MapPin, Navigation } from 'lucide-react-native';
@@ -9,6 +23,16 @@ import { useAuthStore } from '@/store/auth-store';
 import { useChatStore } from '@/store/chat-store';
 import { useLocationStore } from '@/store/location-store';
 import * as ImagePicker from 'expo-image-picker';
+import type { Audio } from 'expo-av';
+import {
+  requestMicPermission,
+  startRecordingSession,
+  finishRecordingToPayload,
+  playVoicePayload,
+  stopPlayback,
+  isVoiceM4aPayload,
+  MAX_VOICE_RECORDING_MS,
+} from '@/lib/chat-voice';
 
 const PRIMARY = '#3498db';
 const PRIMARY_DARK = '#2980b9';
@@ -16,12 +40,26 @@ const BG = '#EEF2F7';
 const BUBBLE_OTHER = '#FFFFFF';
 
 export default function ChatScreen() {
-  const { id, name, profileImage, from, to, price } = useLocalSearchParams();
+  const { id: idParam, name, profileImage, from, to, price } = useLocalSearchParams();
+  const chatPartnerId = useMemo(() => {
+    if (typeof idParam === 'string') return idParam;
+    if (Array.isArray(idParam)) return idParam[0] ?? '';
+    return '';
+  }, [idParam]);
   const [message, setMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const recordingAnimation = useRef(new Animated.Value(1)).current;
-  
+  const recordingLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const holdingMicRef = useRef(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingStartMsRef = useRef(0);
+  const maxRecordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textInputRef = useRef<TextInput>(null);
+  const listRef = useRef<FlatList>(null);
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
   const user = useAuthStore(state => state.user);
   const users = useAuthStore(state => state.users);
   const { messages, sendMessage, deleteMessage, markAsRead } = useChatStore();
@@ -29,28 +67,29 @@ export default function ChatScreen() {
   
   // Use passed passenger data if available, otherwise fallback to users store
   const chatPartner = name && profileImage ? {
-    id: id as string,
+    id: chatPartnerId,
     username: name as string,
     profileImage: profileImage as string,
     from: from as string,
     to: to as string,
     price: price as string
-  } : users.find(u => u.id === id);
-  const chatMessages = messages.filter(m => 
-    (m.senderId === user?.id && m.receiverId === id) ||
-    (m.senderId === id && m.receiverId === user?.id)
+  } : users.find(u => u.id === chatPartnerId);
+  const chatMessages = messages.filter(m =>
+    (m.senderId === user?.id && m.receiverId === chatPartnerId) ||
+    (m.senderId === chatPartnerId && m.receiverId === user?.id)
   );
 
-  const handleSendMessage = () => {
-    if (message.trim() && user && id) {
-      sendMessage({
+  const handleSendMessage = async () => {
+    if (message.trim() && user && chatPartnerId) {
+      const ok = await sendMessage({
         senderId: user.id,
-        receiverId: id as string,
+        receiverId: chatPartnerId,
         content: message.trim(),
         timestamp: new Date().toISOString(),
         type: 'text'
       });
-      setMessage('');
+      if (ok) setMessage('');
+      else Alert.alert('Message', 'Could not send. Check your connection and try again.');
     }
   };
 
@@ -63,28 +102,31 @@ export default function ChatScreen() {
         quality: 0.7,
       });
 
-      if (!result.canceled && user && id) {
-        sendMessage({
+      if (!result.canceled && user && chatPartnerId) {
+        const ok = await sendMessage({
           senderId: user.id,
-          receiverId: id as string,
+          receiverId: chatPartnerId,
           content: result.assets[0].uri,
           timestamp: new Date().toISOString(),
           type: 'image'
         });
+        if (!ok) Alert.alert('Photo', 'Could not send. Check your connection and try again.');
       }
     } catch {
       Alert.alert('Error', 'Failed to pick image');
     }
   };
 
-  const handleMicPressIn = () => {
-    if (Platform.OS === 'web') {
-      Alert.alert('Not Available', 'Voice recording is not available on web');
-      return;
-    }
-    
-    setIsRecording(true);
-    Animated.loop(
+  const stopRecordingAnimation = () => {
+    recordingLoopRef.current?.stop();
+    recordingLoopRef.current = null;
+    recordingAnimation.stopAnimation();
+    recordingAnimation.setValue(1);
+  };
+
+  const startRecordingAnimation = () => {
+    stopRecordingAnimation();
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(recordingAnimation, {
           toValue: 1.3,
@@ -97,27 +139,104 @@ export default function ChatScreen() {
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    recordingLoopRef.current = loop;
+    loop.start();
+  };
+
+  const clearMaxRecordingTimeout = () => {
+    if (maxRecordingTimeoutRef.current) {
+      clearTimeout(maxRecordingTimeoutRef.current);
+      maxRecordingTimeoutRef.current = null;
+    }
+  };
+
+  const finalizeActiveRecording = () => {
+    if (Platform.OS === 'web') return;
+    clearMaxRecordingTimeout();
+    holdingMicRef.current = false;
+    setIsRecording(false);
+    stopRecordingAnimation();
+
+    const rec = recordingRef.current;
+    recordingRef.current = null;
+    if (!rec || !user || !chatPartnerId) return;
+
+    void (async () => {
+      const startedAt = recordingStartMsRef.current;
+      const result = await finishRecordingToPayload(rec, startedAt);
+      if (!result) {
+        Alert.alert('Voice message', 'Recording was too short or could not be saved.');
+        return;
+      }
+      const ok = await sendMessage({
+        senderId: user.id,
+        receiverId: chatPartnerId,
+        content: result.payload,
+        timestamp: new Date().toISOString(),
+        type: 'voice',
+        duration: result.durationSec,
+      });
+      if (!ok) {
+        Alert.alert('Voice message', 'Could not send. Check your connection and try again.');
+      }
+    })();
+  };
+
+  const handleMicPressIn = () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Not Available', 'Voice recording is not available on web');
+      return;
+    }
+    if (!chatPartnerId) {
+      Alert.alert('Chat', 'Missing chat partner. Go back and open the conversation again.');
+      return;
+    }
+
+    clearMaxRecordingTimeout();
+    Keyboard.dismiss();
+    textInputRef.current?.blur();
+    holdingMicRef.current = true;
+
+    void (async () => {
+      const ok = await requestMicPermission();
+      if (!ok) {
+        holdingMicRef.current = false;
+        Alert.alert('Microphone', 'Please allow microphone access to send voice messages.');
+        return;
+      }
+      if (!holdingMicRef.current) return;
+
+      try {
+        const recording = await startRecordingSession();
+        if (!holdingMicRef.current) {
+          try {
+            await recording.stopAndUnloadAsync();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        recordingRef.current = recording;
+        recordingStartMsRef.current = Date.now();
+        setIsRecording(true);
+        startRecordingAnimation();
+        clearMaxRecordingTimeout();
+        maxRecordingTimeoutRef.current = setTimeout(() => {
+          maxRecordingTimeoutRef.current = null;
+          if (recordingRef.current) {
+            finalizeActiveRecording();
+          }
+        }, MAX_VOICE_RECORDING_MS);
+      } catch {
+        holdingMicRef.current = false;
+        Alert.alert('Recording', 'Could not start recording. Try again.');
+      }
+    })();
   };
 
   const handleMicPressOut = () => {
-    if (Platform.OS === 'web') return;
-    
-    setIsRecording(false);
-    recordingAnimation.stopAnimation();
-    recordingAnimation.setValue(1);
-    
-    // Simulate sending voice message
-    if (user && id) {
-      sendMessage({
-        senderId: user.id,
-        receiverId: id as string,
-        content: 'voice_message_' + Date.now(),
-        timestamp: new Date().toISOString(),
-        type: 'voice',
-        duration: Math.floor(Math.random() * 30) + 5
-      });
-    }
+    finalizeActiveRecording();
   };
 
   const handleMessageLongPress = (messageId: string, senderId: string) => {
@@ -136,26 +255,39 @@ export default function ChatScreen() {
     );
   };
 
-  const handleVoicePlayPause = (messageId: string) => {
+  const handleVoicePlayPause = async (messageId: string, content: string, durationSec?: number) => {
     if (playingVoiceId === messageId) {
+      await stopPlayback();
       setPlayingVoiceId(null);
-    } else {
-      setPlayingVoiceId(messageId);
-      // Simulate voice playback duration
-      setTimeout(() => {
-        setPlayingVoiceId(null);
-      }, 3000);
+      return;
     }
+
+    if (isVoiceM4aPayload(content)) {
+      await stopPlayback();
+      setPlayingVoiceId(messageId);
+      try {
+        await playVoicePayload(content, () => setPlayingVoiceId(null));
+      } catch {
+        setPlayingVoiceId(null);
+        Alert.alert('Playback', 'Could not play this voice message.');
+      }
+      return;
+    }
+
+    // Legacy placeholder messages (no audio blob)
+    setPlayingVoiceId(messageId);
+    const ms = Math.min(MAX_VOICE_RECORDING_MS, Math.max(1000, (durationSec ?? 3) * 1000));
+    setTimeout(() => setPlayingVoiceId(null), ms);
   };
 
   const handleShareLocation = async () => {
     try {
-      const locationLink = await shareLocation(id as string, user?.id);
+      const locationLink = await shareLocation(chatPartnerId, user?.id);
       if (locationLink && user) {
         // Send location message
-        sendMessage({
+        const ok = await sendMessage({
           senderId: user.id,
-          receiverId: id as string,
+          receiverId: chatPartnerId,
           content: locationLink,
           timestamp: new Date().toISOString(),
           type: 'location',
@@ -165,6 +297,10 @@ export default function ChatScreen() {
             address: currentLocation.address
           } : undefined
         });
+        if (!ok) {
+          Alert.alert('Error', 'Could not send the location message. Check your connection.');
+          return;
+        }
 
         // Share the link
         if (Platform.OS === 'web') {
@@ -231,11 +367,22 @@ export default function ChatScreen() {
     startLocationTracking();
     
     // Mark messages as read when chat opens
-    if (user && id) {
-      markAsRead(id as string, user.id);
+    if (user && chatPartnerId) {
+      markAsRead(chatPartnerId, user.id);
     }
     
     return () => {
+      if (maxRecordingTimeoutRef.current) {
+        clearTimeout(maxRecordingTimeoutRef.current);
+        maxRecordingTimeoutRef.current = null;
+      }
+      void stopPlayback();
+      const rec = recordingRef.current;
+      if (rec) {
+        recordingRef.current = null;
+        void rec.stopAndUnloadAsync().catch(() => {});
+      }
+      holdingMicRef.current = false;
       // Keep location tracking active for shared locations
       // Only stop if no active shared locations
       const hasActiveSharedLocations = sharedLocations.some(loc => loc.isActive);
@@ -243,7 +390,34 @@ export default function ChatScreen() {
         stopLocationTracking();
       }
     };
-  }, [sharedLocations, user, id, markAsRead, startLocationTracking, stopLocationTracking]);
+  }, [sharedLocations, user, chatPartnerId, markAsRead, startLocationTracking, stopLocationTracking]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const onShow = (e: { endCoordinates: { height: number } }) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const subShow = Keyboard.addListener(showEvent, onShow);
+    const subHide = Keyboard.addListener(hideEvent, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (keyboardHeight <= 0) return;
+    const t = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    }, 120);
+    return () => clearTimeout(t);
+  }, [keyboardHeight]);
 
   const renderMessage = ({ item }: { item: any }) => {
     const isMyMessage = item.senderId === user?.id;
@@ -284,7 +458,10 @@ export default function ChatScreen() {
           </TouchableOpacity>
         ) : item.type === 'voice' ? (
           <View style={styles.voiceMessageContainer}>
-            <TouchableOpacity style={styles.voicePlayButton} onPress={() => handleVoicePlayPause(item.id)}>
+            <TouchableOpacity
+              style={styles.voicePlayButton}
+              onPress={() => handleVoicePlayPause(item.id, item.content, item.duration)}
+            >
               {isPlaying ? (
                 <Pause color={isMyMessage ? '#fff' : '#334155'} size={16} />
               ) : (
@@ -357,8 +534,13 @@ export default function ChatScreen() {
     : chatPartner?.profileImage ||
       'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
 
+  const safeBottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 6 : 10);
+  /** Manual offset from Keyboard events — avoids relying on KeyboardAvoidingView / window resize. */
+  const composerBottomPad =
+    keyboardHeight > 0 ? keyboardHeight + 10 : safeBottomPad;
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
 
       <View style={styles.header}>
@@ -388,61 +570,66 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={chatMessages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContent}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={styles.keyboardAvoiding}>
+        <FlatList
+          ref={listRef}
+          data={chatMessages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMessage}
+          style={styles.messagesList}
+          contentContainerStyle={styles.messagesContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        />
 
-      {isRecording && (
-        <View style={styles.recordingIndicator}>
-          <Animated.View style={[styles.recordingDot, { transform: [{ scale: recordingAnimation }] }]} />
-          <Text style={styles.recordingText}>Recording…</Text>
-        </View>
-      )}
+        {isRecording && (
+          <View style={styles.recordingIndicator}>
+            <Animated.View style={[styles.recordingDot, { transform: [{ scale: recordingAnimation }] }]} />
+            <Text style={styles.recordingText}>Recording…</Text>
+          </View>
+        )}
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.inputContainer}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-      >
-        <View style={styles.inputRow}>
-          <TouchableOpacity style={styles.inputIcon} onPress={handleCameraPress} hitSlop={8}>
-            <Camera color="#64748b" size={24} />
-          </TouchableOpacity>
+        <View style={[styles.inputContainer, { paddingBottom: composerBottomPad }]}>
+          <View style={styles.inputRow}>
+            <TouchableOpacity style={styles.inputIcon} onPress={handleCameraPress} hitSlop={8}>
+              <Camera color="#64748b" size={24} />
+            </TouchableOpacity>
 
-          <TextInput
-            style={styles.textInput}
-            placeholder="Message"
-            placeholderTextColor="#94a3b8"
-            value={message}
-            onChangeText={setMessage}
-            multiline
-          />
+            <TextInput
+              ref={textInputRef}
+              style={styles.textInput}
+              placeholder="Message"
+              placeholderTextColor="#94a3b8"
+              value={message}
+              onChangeText={setMessage}
+              multiline
+              {...(Platform.OS === 'android' ? { textAlignVertical: 'center' as const } : {})}
+            />
 
-          <TouchableOpacity
-            style={[styles.inputIcon, isRecording && styles.recordingIcon]}
-            onPressIn={handleMicPressIn}
-            onPressOut={handleMicPressOut}
-          >
-            <Mic color={isRecording ? '#ef4444' : '#64748b'} size={24} />
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={handleSendMessage} activeOpacity={0.85}>
-            <LinearGradient
-              colors={[PRIMARY, PRIMARY_DARK]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.sendButton}
+            <Pressable
+              style={[styles.inputIcon, isRecording && styles.recordingIcon]}
+              onPressIn={handleMicPressIn}
+              onPressOut={handleMicPressOut}
+              hitSlop={12}
+              pressRetentionOffset={{ top: 32, bottom: 48, left: 32, right: 32 }}
             >
-              <Send color="#fff" size={20} />
-            </LinearGradient>
-          </TouchableOpacity>
+              <Mic color={isRecording ? '#ef4444' : '#64748b'} size={24} />
+            </Pressable>
+
+            <TouchableOpacity onPress={handleSendMessage} activeOpacity={0.85}>
+              <LinearGradient
+                colors={[PRIMARY, PRIMARY_DARK]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.sendButton}
+              >
+                <Send color="#fff" size={20} />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -461,6 +648,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG,
+  },
+  keyboardAvoiding: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -613,7 +803,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#e2e8f0',
-    paddingBottom: Platform.OS === 'ios' ? 4 : 8,
   },
   inputRow: {
     flexDirection: 'row',

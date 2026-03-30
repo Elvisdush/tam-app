@@ -22,7 +22,7 @@ export interface ChatMessage {
 
 interface ChatState {
   messages: ChatMessage[];
-  sendMessage: (message: Omit<ChatMessage, 'id'>) => Promise<void>;
+  sendMessage: (message: Omit<ChatMessage, 'id'>) => Promise<boolean>;
   deleteMessage: (messageId: string) => Promise<void>;
   markAsRead: (userId: string, currentUserId: string) => void;
   getUnreadCount: (currentUserId: string) => number;
@@ -54,15 +54,17 @@ export const useChatStore = create<ChatState>()(
         try {
           const messagesRef = ref(database, 'messages');
           const newMessageRef = push(messagesRef);
-          
+
           await firebaseSet(newMessageRef, {
             ...message,
             read: false,
           });
-          
+
           get().loadMessages();
+          return true;
         } catch (error) {
           console.error('Error sending message:', error);
+          return false;
         }
       },
       
