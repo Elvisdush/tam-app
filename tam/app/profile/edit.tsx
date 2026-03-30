@@ -9,6 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -33,6 +35,7 @@ export default function EditProfileScreen() {
   const [vehicleType, setVehicleType] = useState<'car' | 'motorbike'>(user?.vehicleType ?? 'motorbike');
   const [vehiclePlate, setVehiclePlate] = useState(user?.vehiclePlate?.trim() || '');
   const [vehicleModel, setVehicleModel] = useState(user?.vehicleModel?.trim() || '');
+  const [saving, setSaving] = useState(false);
 
   const pickImage = async (type: 'profile' | 'vehicle') => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -51,27 +54,42 @@ export default function EditProfileScreen() {
     }
   };
 
-  const handleSaveChanges = () => {
-    if (!user || !username?.trim() || !email?.trim() || !phone?.trim()) return;
-    updateUser({
-      ...user,
-      username: username.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      profileImage: profileImage || '',
-      bio: bio.trim() || undefined,
-      emergencyContactName: emergencyContactName.trim() || undefined,
-      emergencyContactPhone: emergencyContactPhone.trim() || undefined,
-      ...(user.type === 'driver'
-        ? {
-            vehicleType,
-            vehiclePlate: vehiclePlate.trim() || undefined,
-            vehicleModel: vehicleModel.trim() || undefined,
-            ...(vehicleImage ? { vehicleImage } : {}),
-          }
-        : {}),
-    });
-    router.back();
+  const handleSaveChanges = async () => {
+    if (!user || !username?.trim() || !email?.trim() || !phone?.trim()) {
+      Alert.alert('Profile', 'Please fill in your name, email, and phone.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const ok = await updateUser({
+        ...user,
+        username: username.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        profileImage: profileImage || '',
+        bio: bio.trim(),
+        emergencyContactName: emergencyContactName.trim(),
+        emergencyContactPhone: emergencyContactPhone.trim(),
+        ...(user.type === 'driver'
+          ? {
+              vehicleType,
+              vehiclePlate: vehiclePlate.trim(),
+              vehicleModel: vehicleModel.trim(),
+              ...(vehicleImage ? { vehicleImage } : {}),
+            }
+          : {}),
+      });
+      if (ok) {
+        router.back();
+      } else {
+        Alert.alert(
+          'Could not save',
+          'Your changes could not be saved. Check your connection and try again.'
+        );
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!user) return null;
@@ -226,8 +244,17 @@ export default function EditProfileScreen() {
               </>
             )}
 
-            <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges} activeOpacity={0.88}>
-              <Text style={styles.saveButtonText}>Save changes</Text>
+            <TouchableOpacity
+              style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+              onPress={handleSaveChanges}
+              activeOpacity={0.88}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.saveButtonText}>Save changes</Text>
+              )}
             </TouchableOpacity>
 
             {!isDriver && (
@@ -407,6 +434,9 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 17,
     fontWeight: '800',
+  },
+  saveButtonDisabled: {
+    opacity: 0.75,
   },
   secondaryLink: {
     marginTop: 18,

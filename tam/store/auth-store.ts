@@ -6,13 +6,18 @@ import { database } from '@/lib/firebase';
 import { User } from '@/types/user';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
 
+/** Firebase Realtime Database rejects `undefined` in update(); omit those keys. */
+function omitUndefined<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+}
+
 interface AuthState {
   user: User | null;
   users: User[];
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<boolean>;
   register: (userData: Omit<User, 'id'>) => Promise<void>;
-  updateUser: (userData: User) => Promise<void>;
+  updateUser: (userData: User) => Promise<boolean>;
   logout: () => void;
   loadUsers: () => void;
 }
@@ -82,16 +87,17 @@ export const useAuthStore = create<AuthState>()(
       
       updateUser: async (userData) => {
         try {
-          const { id, ...dataToUpdate } = userData;
+          const { id, ...rest } = userData;
+          const dataToUpdate = omitUndefined(rest as Record<string, unknown>);
           await firebaseUpdate(ref(database, `users/${id}`), dataToUpdate);
-          
-          set(state => ({
-            user: userData,
-          }));
-          
+
+          set({ user: userData });
+
           get().loadUsers();
+          return true;
         } catch (error) {
           console.error('Error updating user:', error);
+          return false;
         }
       },
       
