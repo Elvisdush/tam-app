@@ -7,6 +7,10 @@ import type { OnlineDriverMarker } from '@/types/online-driver';
 
 const DEMO_PREFIX = 'demo-';
 
+/** Sample contact for demo map drivers (passenger details sheet) */
+export const DEMO_DRIVER_PHONE = '0791740078';
+export const DEMO_DRIVER_EMAIL = 'onedriver@gmail.com';
+
 /** ~600m–1.8km offsets (Rwanda lat scale) — stable for a given center */
 const DEMO_OFFSETS: Array<{ lat: number; lng: number; transportType: 'car' | 'motorbike' }> = [
   { lat: 0.0042, lng: 0.0011, transportType: 'motorbike' },
@@ -38,5 +42,7 @@ export function buildDemoNearbyDrivers(
     isDemo: true,
     vehiclePlate: o.transportType === 'motorbike' ? `RAA ${1000 + i}M` : `RAA ${2000 + i}C`,
     vehicleModel: o.transportType === 'motorbike' ? 'Honda CB' : 'Toyota Corolla',
+    demoPhone: DEMO_DRIVER_PHONE,
+    demoEmail: DEMO_DRIVER_EMAIL,
   }));
 }

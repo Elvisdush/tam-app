@@ -22,7 +22,6 @@ import {
   Phone,
   Car,
   Bike,
-  Star,
   Shield,
   UserCircle,
   Edit3,
@@ -32,19 +31,11 @@ import {
   FileText,
 } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
+import { StarRatingRow } from '@/components/StarRatingRow';
 
 const PRIMARY = '#3498db';
 const PLACEHOLDER_AVATAR =
   'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
-
-function ratingLine(avg?: number, count?: number): string | null {
-  if (avg == null || avg <= 0) return null;
-  const v = Math.min(5, Math.max(0, avg));
-  const full = Math.round(v);
-  const stars = '★'.repeat(full) + '☆'.repeat(5 - full);
-  const c = count != null && count > 0 ? ` · ${count} rating${count === 1 ? '' : 's'}` : '';
-  return `${stars}  ${v.toFixed(1)}${c}`;
-}
 
 type RowProps = {
   icon: React.ReactNode;
@@ -119,7 +110,7 @@ export default function ProfileScreen() {
 
   const avatarUri = user.profileImage?.startsWith('blob:') ? PLACEHOLDER_AVATAR : user.profileImage || PLACEHOLDER_AVATAR;
   const isDriver = user.type === 'driver';
-  const ratingStr = ratingLine(user.averageRating, user.ratingCount);
+  const hasRating = user.averageRating != null && user.averageRating > 0;
   const bioText = user.bio?.trim();
   const iceName = user.emergencyContactName?.trim();
   const icePhone = user.emergencyContactPhone?.trim();
@@ -162,12 +153,16 @@ export default function ProfileScreen() {
               <Text style={styles.roleBadgeText}>{isDriver ? 'Driver' : 'Passenger'}</Text>
             </View>
           </View>
-          {ratingStr ? (
-            <View style={styles.ratingPill}>
-              <Star color="#ca8a04" size={16} strokeWidth={2.2} />
-              <Text style={styles.ratingPillText}>{ratingStr}</Text>
-            </View>
-          ) : null}
+          <View style={styles.ratingPill}>
+            <StarRatingRow
+              value={hasRating ? user.averageRating : undefined}
+              ratingCount={hasRating ? user.ratingCount : undefined}
+              size={20}
+              showEmpty={!hasRating}
+              emptyLabel="No ratings yet"
+              showMaxHint
+            />
+          </View>
         </LinearGradient>
 
         <View style={styles.sheet}>
@@ -386,20 +381,14 @@ const styles = StyleSheet.create({
   },
   ratingPill: {
     marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignSelf: 'stretch',
+    maxWidth: '100%',
     backgroundColor: 'rgba(255,255,255,0.95)',
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-  },
-  ratingPillText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0f172a',
   },
   sheet: {
     marginTop: -12,

@@ -19,7 +19,7 @@ import MapView from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Menu, Crosshair, X, Radio, Shield, Phone } from 'lucide-react-native';
+import { Menu, Crosshair, X, Radio, Shield, Phone, Mail } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { useRideStore } from '@/store/ride-store';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
@@ -36,23 +36,15 @@ import {
   MIN_PRICE_MOTO_KIGALI_RWF,
 } from '@/lib/rwanda-passenger-pricing';
 import type { OnlineDriverMarker } from '@/types/online-driver';
-import type { User } from '@/types/user';
+import { StarRatingRow } from '@/components/StarRatingRow';
 
 const TAB_BAR_OFFSET = 52;
 
 const PLACEHOLDER_AVATAR =
   'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
 
-function ratingLine(profile: User | undefined): string {
-  if (!profile?.averageRating || profile.averageRating <= 0) {
-    return 'No ratings yet';
-  }
-  const v = Math.min(5, Math.max(0, profile.averageRating));
-  const full = Math.round(v);
-  const stars = '★'.repeat(full) + '☆'.repeat(5 - full);
-  const c = profile.ratingCount;
-  return `${stars}  ${v.toFixed(1)}${c != null && c > 0 ? `  ·  ${c} rating${c === 1 ? '' : 's'}` : ''}`;
-}
+/** Demo drivers show **4 / 5** stars when Firebase has no average yet */
+const DEMO_FALLBACK_RATING = 4;
 
 function pickupLineFromLocation(loc: {
   latitude: number;
@@ -850,7 +842,10 @@ export default function HomeScreen() {
               const profile = users.find((u) => u.id === d.userId);
               const name =
                 profile?.username?.trim() || d.username?.trim() || 'Driver';
-              const phoneRaw = profile?.phone?.trim() ?? '';
+              const phoneRaw =
+                profile?.phone?.trim() || (d.isDemo ? d.demoPhone?.trim() ?? '' : '');
+              const emailRaw =
+                profile?.email?.trim() || (d.isDemo ? d.demoEmail?.trim() ?? '' : '');
               const avatarUri =
                 profile?.profileImage && !profile.profileImage.startsWith('blob:')
                   ? profile.profileImage
@@ -890,7 +885,11 @@ export default function HomeScreen() {
                   ) : null}
 
                   <View style={styles.driverDetailBlock}>
-                    <Text style={styles.driverDetailBlockTitle}>Phone</Text>
+                    <Text style={styles.driverDetailBlockTitle}>Contact the driver</Text>
+                    <Text style={styles.driverContactHint}>
+                      Reach them by phone or email. You can also use in-app chat after booking.
+                    </Text>
+                    <Text style={styles.driverContactSubheading}>Phone</Text>
                     {phoneRaw.length > 0 ? (
                       <TouchableOpacity
                         style={styles.driverPhoneRow}
@@ -905,15 +904,54 @@ export default function HomeScreen() {
                         <Text style={styles.driverPhoneTap}>Call</Text>
                       </TouchableOpacity>
                     ) : (
-                      <Text style={styles.driverDetailMuted}>
-                        {d.isDemo ? 'Not available for demo drivers' : 'Not on file'}
-                      </Text>
+                      <Text style={styles.driverDetailMuted}>Not on file</Text>
+                    )}
+                    <Text style={[styles.driverContactSubheading, styles.driverContactSubheadingSpaced]}>
+                      Email
+                    </Text>
+                    {emailRaw.length > 0 ? (
+                      <TouchableOpacity
+                        style={styles.driverPhoneRow}
+                        onPress={() => {
+                          void Linking.openURL(`mailto:${encodeURIComponent(emailRaw)}`);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Mail color="#2563eb" size={18} strokeWidth={2.2} style={{ marginRight: 8 }} />
+                        <Text style={styles.driverPhoneText} numberOfLines={2}>
+                          {emailRaw}
+                        </Text>
+                        <Text style={styles.driverPhoneTap}>Email</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.driverDetailMuted}>Not on file</Text>
                     )}
                   </View>
 
                   <View style={styles.driverDetailBlock}>
                     <Text style={styles.driverDetailBlockTitle}>Rider ratings</Text>
-                    <Text style={styles.driverRatingText}>{ratingLine(profile)}</Text>
+                    {(() => {
+                      const hasFirebaseRating =
+                        profile?.averageRating != null && profile.averageRating > 0;
+                      const displayValue = hasFirebaseRating
+                        ? profile!.averageRating
+                        : d.isDemo
+                          ? DEMO_FALLBACK_RATING
+                          : null;
+                      return (
+                        <>
+                          <StarRatingRow
+                            value={displayValue ?? undefined}
+                            size={22}
+                            ratingCount={hasFirebaseRating ? profile?.ratingCount : undefined}
+                            showEmpty={displayValue == null}
+                            emptyLabel="No ratings yet"
+                            badge={!hasFirebaseRating && d.isDemo ? 'Demo' : undefined}
+                            showMaxHint
+                          />
+                        </>
+                      );
+                    })()}
                   </View>
 
                   <View style={styles.driverDetailBlock}>
@@ -1644,6 +1682,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 8,
   },
+  driverContactHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#64748b',
+    marginBottom: 12,
+  },
+  driverContactSubheading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  driverContactSubheadingSpaced: {
+    marginTop: 14,
+  },
   driverPhoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1664,11 +1717,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#94a3b8',
     fontStyle: 'italic',
-  },
-  driverRatingText: {
-    fontSize: 16,
-    color: '#0f172a',
-    lineHeight: 24,
   },
   driverFareLine: {
     fontSize: 15,
