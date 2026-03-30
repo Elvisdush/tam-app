@@ -23,6 +23,15 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
+        "LSApplicationQueriesSchemes": [
+          "tel",
+          "telprompt",
+          "mailto",
+          "googlegmail",
+          "googlemail",
+          "message",
+          "sms"
+        ],
         "UIBackgroundModes": [
           "location"
         ]

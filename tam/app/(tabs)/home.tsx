@@ -37,6 +37,7 @@ import {
 } from '@/lib/rwanda-passenger-pricing';
 import type { OnlineDriverMarker } from '@/types/online-driver';
 import { StarRatingRow } from '@/components/StarRatingRow';
+import { openPhoneDialer } from '@/lib/open-phone-dialer';
 
 const TAB_BAR_OFFSET = 52;
 
@@ -332,80 +333,25 @@ export default function HomeScreen() {
     setShowAndroidSchedulePicker(false);
   };
 
-  const validatePassengerSearchForBooking = (): boolean => {
-    if (user?.type !== 'passenger') return false;
-    if (!showTripDetails) {
-      Alert.alert('Trip', 'Choose Taxi Moto or Taxi Car above to plan your ride.');
-      return false;
-    }
-    if (!from.trim()) {
-      Alert.alert('From', 'Enter where you are leaving from.');
-      return false;
-    }
-    if (transportType === 'motorbike') {
-      if (!currentLocation) {
-        Alert.alert(
-          'Location required',
-          'Taxi moto is only available in Kigali City. Turn on location so we can verify your pickup area.'
-        );
-        return false;
-      }
-      if (!isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
-        Alert.alert(
-          'Taxi moto only in Kigali',
-          'Taxi moto is only available when your pickup is inside Kigali City. Use Taxi Car for trips outside Kigali.'
-        );
-        return false;
-      }
-    }
-    if (!selectedDestination) {
-      Alert.alert('Destination', 'Choose a district or city in Rwanda.');
-      return false;
-    }
-    const min = minPriceRwfForDestination(transportType, selectedDestination.id);
-    if (min == null) {
-      Alert.alert('Destination', 'Taxi moto is only available within Kigali City. Pick a Kigali destination.');
-      return false;
-    }
-    const p = Number(price.replace(/\s/g, ''));
-    if (Number.isNaN(p) || p < min) {
-      Alert.alert(
-        'Price',
-        `Minimum fare for ${transportType === 'car' ? 'taxi car' : 'taxi moto'} to this destination is ${min.toLocaleString()} RWF.`
-      );
-      return false;
-    }
-    return true;
-  };
-
   /** Open driver details (name, phone, ratings, fares) — then passenger can book */
   const handleOpenDriverDetails = (driver: OnlineDriverMarker) => {
     if (user?.type !== 'passenger') return;
     setDriverDetailsDriver(driver);
   };
 
-  /** Returns true if booking modal opened successfully */
-  const startBookingWithDriver = (driver: OnlineDriverMarker): boolean => {
-    if (user?.type !== 'passenger') return false;
-    if (!validatePassengerSearchForBooking()) return false;
-    if (driver.transportType !== transportType) {
-      Alert.alert(
-        'Vehicle type',
-        `This driver is a ${driver.transportType === 'car' ? 'taxi car' : 'taxi moto'}. Switch “Taxi moto or taxi car” above or choose another driver.`
-      );
-      return false;
-    }
-    setScheduleDate(new Date(Date.now() + 60 * 60 * 1000));
-    setBookingStep('actions');
-    setBookingDriver(driver);
-    return true;
-  };
-
+  /** Opens full-screen contact (phone + email); passenger calls or emails the driver */
   const handleBookFromDriverDetails = () => {
     if (!driverDetailsDriver) return;
-    if (startBookingWithDriver(driverDetailsDriver)) {
-      setDriverDetailsDriver(null);
-    }
+    const d = driverDetailsDriver;
+    setDriverDetailsDriver(null);
+    router.push({
+      pathname: '/driver-contact',
+      params: {
+        userId: d.userId,
+        isDemo: d.isDemo ? '1' : '0',
+        name: d.username ?? 'Driver',
+      },
+    });
   };
 
   const closeDriverDetails = () => setDriverDetailsDriver(null);
@@ -894,8 +840,7 @@ export default function HomeScreen() {
                       <TouchableOpacity
                         style={styles.driverPhoneRow}
                         onPress={() => {
-                          const normalized = phoneRaw.replace(/[^\d+]/g, '');
-                          void Linking.openURL(`tel:${normalized}`);
+                          void openPhoneDialer(phoneRaw);
                         }}
                         activeOpacity={0.75}
                       >
@@ -990,7 +935,7 @@ export default function HomeScreen() {
                     onPress={handleBookFromDriverDetails}
                     activeOpacity={0.85}
                   >
-                    <Text style={styles.modalPrimaryBtnText}>Book with this driver</Text>
+                    <Text style={styles.modalPrimaryBtnText}>Contact this driver</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={closeDriverDetails}>
                     <Text style={styles.modalCancelText}>Close</Text>

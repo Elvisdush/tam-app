@@ -32,6 +32,7 @@ import {
 } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { StarRatingRow } from '@/components/StarRatingRow';
+import { openPhoneDialer } from '@/lib/open-phone-dialer';
 
 const PRIMARY = '#3498db';
 const PLACEHOLDER_AVATAR =
@@ -98,8 +99,7 @@ export default function ProfileScreen() {
   };
 
   const openTel = (raw: string) => {
-    const n = raw.replace(/[^\d+]/g, '');
-    void Linking.openURL(`tel:${n}`);
+    void openPhoneDialer(raw);
   };
 
   const openMail = (email: string) => {
