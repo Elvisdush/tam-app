@@ -166,10 +166,11 @@ export default function RideTrackScreen() {
             style={styles.chatButton}
             onPress={() =>
               router.push({
-                pathname: `/chat/${partner.id}`,
+                pathname: '/chat/[id]',
                 params: {
+                  id: partner.id,
                   name: partner.username,
-                  profileImage: partner.profileImage,
+                  profileImage: partner.profileImage ?? '',
                   from: ride.from,
                   to: ride.to,
                   price: `${ride.price} RWF`,

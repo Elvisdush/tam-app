@@ -19,7 +19,7 @@ import MapView from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Menu, Crosshair, X, Radio, Shield, Phone, Mail } from 'lucide-react-native';
+import { Menu, Crosshair, X, Radio, Shield, Phone, Mail, Bike, Car } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { useRideStore } from '@/store/ride-store';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
@@ -538,67 +538,136 @@ export default function HomeScreen() {
             </View>
             <View style={styles.uberSheetBody}>
               <View style={styles.sheetHandle} />
-              <View style={styles.taxiPill}>
-                <TouchableOpacity
-                  style={[
-                    styles.taxiPillSeg,
-                    transportType === 'motorbike' && styles.taxiPillSegActive,
-                    !passengerCanUseTaxiMoto && styles.taxiPillSegMuted,
-                  ]}
-                  onPress={trySelectTaxiMoto}
-                  activeOpacity={0.9}
-                >
-                  <Text
+              <View style={styles.rideTypeCard}>
+                <Text style={styles.rideTypeCardHeading}>Choose your ride</Text>
+                <View style={styles.rideTypeGrid}>
+                  <TouchableOpacity
                     style={[
-                      styles.taxiPillText,
-                      transportType === 'motorbike' && styles.taxiPillTextActive,
-                      !passengerCanUseTaxiMoto && styles.taxiPillTextMuted,
+                      styles.rideTypeTile,
+                      styles.rideTypeTileGap,
+                      transportType === 'motorbike' && styles.rideTypeTileActive,
+                      !passengerCanUseTaxiMoto && styles.rideTypeTileMuted,
                     ]}
+                    onPress={trySelectTaxiMoto}
+                    activeOpacity={0.88}
                   >
-                    Taxi Moto
-                  </Text>
-                  <Text
-                    style={[
-                      styles.taxiPillKigaliNote,
-                      transportType === 'motorbike' && passengerCanUseTaxiMoto && styles.taxiPillKigaliNoteOnActive,
-                      !passengerCanUseTaxiMoto && styles.taxiPillKigaliNoteMuted,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {passengerCanUseTaxiMoto ? 'Kigali only' : 'Not available here'}
-                  </Text>
-                  {nearbyCounts != null && (
-                    <Text
+                    <View
                       style={[
-                        styles.taxiPillSub,
-                        transportType === 'motorbike' && styles.taxiPillSubActive,
-                        !passengerCanUseTaxiMoto && styles.taxiPillSubMuted,
+                        styles.rideTypeIconWrap,
+                        transportType === 'motorbike' && styles.rideTypeIconWrapActive,
+                        !passengerCanUseTaxiMoto && styles.rideTypeIconWrapMuted,
                       ]}
                     >
-                      {nearbyCounts.moto} nearby
-                    </Text>
-                  )}
-                </TouchableOpacity>
-                <View style={styles.taxiPillDivider} />
-                <TouchableOpacity
-                  style={[styles.taxiPillSeg, transportType === 'car' && styles.taxiPillSegActive]}
-                  onPress={() => {
-                    setTransportType('car');
-                    setShowTripDetails(true);
-                  }}
-                  activeOpacity={0.9}
-                >
-                  <Text style={[styles.taxiPillText, transportType === 'car' && styles.taxiPillTextActive]}>
-                    Taxi Car
-                  </Text>
-                  {nearbyCounts != null && (
+                      <Bike
+                        size={26}
+                        strokeWidth={2.4}
+                        color={
+                          transportType === 'motorbike' && passengerCanUseTaxiMoto
+                            ? '#ffffff'
+                            : passengerCanUseTaxiMoto
+                              ? '#ea580c'
+                              : '#94a3b8'
+                        }
+                      />
+                    </View>
                     <Text
-                      style={[styles.taxiPillSub, transportType === 'car' && styles.taxiPillSubActive]}
+                      style={[
+                        styles.rideTypeTileTitle,
+                        transportType === 'motorbike' && styles.rideTypeTileTitleActive,
+                        !passengerCanUseTaxiMoto && styles.rideTypeTileTitleMuted,
+                      ]}
                     >
-                      {nearbyCounts.car} nearby
+                      Taxi Moto
                     </Text>
-                  )}
-                </TouchableOpacity>
+                    <Text
+                      style={[
+                        styles.rideTypeTileHint,
+                        transportType === 'motorbike' && passengerCanUseTaxiMoto && styles.rideTypeTileHintActive,
+                        !passengerCanUseTaxiMoto && styles.rideTypeTileHintWarn,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {passengerCanUseTaxiMoto ? 'Kigali only' : 'Not available here'}
+                    </Text>
+                    {nearbyCounts != null && (
+                      <View
+                        style={[
+                          styles.rideTypeBadge,
+                          transportType === 'motorbike' && passengerCanUseTaxiMoto
+                            ? styles.rideTypeBadgeOnActive
+                            : styles.rideTypeBadgeMotoIdle,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.rideTypeBadgeText,
+                            transportType === 'motorbike' && passengerCanUseTaxiMoto
+                              ? styles.rideTypeBadgeTxtLight
+                              : styles.rideTypeBadgeTxtMoto,
+                          ]}
+                        >
+                          {nearbyCounts.moto} nearby
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.rideTypeTile, transportType === 'car' && styles.rideTypeTileActiveCar]}
+                    onPress={() => {
+                      setTransportType('car');
+                      setShowTripDetails(true);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <View
+                      style={[
+                        styles.rideTypeIconWrap,
+                        transportType === 'car' && styles.rideTypeIconWrapActiveCar,
+                      ]}
+                    >
+                      <Car
+                        size={26}
+                        strokeWidth={2.4}
+                        color={transportType === 'car' ? '#ffffff' : '#16a34a'}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.rideTypeTileTitle,
+                        transportType === 'car' && styles.rideTypeTileTitleActive,
+                      ]}
+                    >
+                      Taxi Car
+                    </Text>
+                    <Text
+                      style={[
+                        styles.rideTypeTileHint,
+                        transportType === 'car' && styles.rideTypeTileHintActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      Kigali & beyond
+                    </Text>
+                    {nearbyCounts != null && (
+                      <View
+                        style={[
+                          styles.rideTypeBadge,
+                          transportType === 'car' ? styles.rideTypeBadgeOnActive : styles.rideTypeBadgeCarIdle,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.rideTypeBadgeText,
+                            transportType === 'car' ? styles.rideTypeBadgeTxtLight : styles.rideTypeBadgeTxtCar,
+                          ]}
+                        >
+                          {nearbyCounts.car} nearby
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {!showTripDetails && (
@@ -1276,74 +1345,160 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#276ef1',
   },
-  taxiPill: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: 'rgba(39, 110, 241, 0.12)',
-    borderRadius: 28,
-    padding: 3,
-    marginHorizontal: 16,
+  rideTypeCard: {
+    marginHorizontal: 14,
     marginTop: 4,
     marginBottom: 12,
-    shadowColor: '#276ef1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.08,
+        shadowRadius: 20,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
   },
-  taxiPillSeg: {
+  rideTypeCardHeading: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.75,
+    textTransform: 'uppercase',
+    color: '#64748b',
+    marginBottom: 12,
+    marginLeft: 2,
+  },
+  rideTypeGrid: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  rideTypeTileGap: {
+    marginRight: 10,
+  },
+  rideTypeTile: {
     flex: 1,
+    minHeight: 152,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+  },
+  rideTypeTileActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#1d4ed8',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#2563eb',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
+  },
+  rideTypeTileActiveCar: {
+    backgroundColor: '#15803d',
+    borderColor: '#166534',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#15803d',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
+  },
+  rideTypeTileMuted: {
+    opacity: 0.72,
+    backgroundColor: '#f1f5f9',
+  },
+  rideTypeIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 11,
-    paddingHorizontal: 10,
-    borderRadius: 25,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  taxiPillSegActive: {
-    backgroundColor: '#276ef1',
+  rideTypeIconWrapActive: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(255,255,255,0.35)',
   },
-  taxiPillDivider: {
-    width: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(39, 110, 241, 0.35)',
-    marginVertical: 6,
+  rideTypeIconWrapActiveCar: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(255,255,255,0.35)',
   },
-  taxiPillText: {
-    fontSize: 15,
+  rideTypeIconWrapMuted: {
+    backgroundColor: '#f1f5f9',
+  },
+  rideTypeTileTitle: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#1e40af',
+    color: '#0f172a',
+    letterSpacing: -0.2,
+    textAlign: 'center',
   },
-  taxiPillTextActive: {
+  rideTypeTileTitleActive: {
     color: '#ffffff',
   },
-  taxiPillSub: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2563eb',
-    marginTop: 2,
-  },
-  taxiPillSubActive: {
-    color: 'rgba(255,255,255,0.92)',
-  },
-  taxiPillSegMuted: {
-    opacity: 0.65,
-  },
-  taxiPillTextMuted: {
+  rideTypeTileTitleMuted: {
     color: '#64748b',
   },
-  taxiPillSubMuted: {
-    color: '#94a3b8',
-  },
-  taxiPillKigaliNote: {
-    fontSize: 10,
+  rideTypeTileHint: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#2563eb',
-    marginTop: 2,
+    color: '#64748b',
+    marginTop: 4,
+    textAlign: 'center',
   },
-  taxiPillKigaliNoteOnActive: {
-    color: 'rgba(255,255,255,0.88)',
+  rideTypeTileHintActive: {
+    color: 'rgba(255,255,255,0.92)',
   },
-  taxiPillKigaliNoteMuted: {
+  rideTypeTileHintWarn: {
     color: '#b91c1c',
+  },
+  rideTypeBadge: {
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  rideTypeBadgeMotoIdle: {
+    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+  },
+  rideTypeBadgeCarIdle: {
+    backgroundColor: 'rgba(22, 163, 74, 0.14)',
+  },
+  rideTypeBadgeOnActive: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  rideTypeBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  rideTypeBadgeTxtMoto: {
+    color: '#1d4ed8',
+  },
+  rideTypeBadgeTxtCar: {
+    color: '#15803d',
+  },
+  rideTypeBadgeTxtLight: {
+    color: '#ffffff',
   },
   tripHint: {
     fontSize: 15,
