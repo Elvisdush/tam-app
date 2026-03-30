@@ -8,4 +8,7 @@ export type OnlineDriverMarker = {
   isDemo?: boolean;
   vehiclePlate?: string;
   vehicleModel?: string;
+  /** Demo drivers only — contact shown when no Firebase user match */
+  demoPhone?: string;
+  demoEmail?: string;
 };
