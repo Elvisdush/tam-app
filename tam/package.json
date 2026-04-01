@@ -5,7 +5,11 @@
   "scripts": {
     "start": "bunx rork start -p nbgoriwkfi8es9tfz1av2 --tunnel",
     "start-web": "bunx rork start -p nbgoriwkfi8es9tfz1av2 --web --tunnel",
-    "start-web-dev": "DEBUG=expo* bunx rork start -p nbgoriwkfi8es9tfz1av2 --web --tunnel"
+    "start-web-dev": "DEBUG=expo* bunx rork start -p nbgoriwkfi8es9tfz1av2 --web --tunnel",
+    "expo:start": "expo start",
+    "expo:start:clear": "expo start -c",
+    "expo:start:lan": "expo start --lan",
+    "expo:start:debug": "set EXPO_DEBUG=1&& npx expo start -c"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

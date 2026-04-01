@@ -16,6 +16,8 @@ import { MessageCircle } from 'lucide-react-native';
 import { useChatStore } from '@/store/chat-store';
 import { useAuthStore } from '@/store/auth-store';
 
+const PRIMARY = '#3498db';
+
 function formatConversationTime(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -40,8 +42,28 @@ export default function MessagesScreen() {
   const user = useAuthStore((state) => state.user);
   const users = useAuthStore((state) => state.users);
 
+  const resolvedMe = useMemo(() => {
+    if (!user?.id) return null;
+    return users.find((u) => u.id === user.id) ?? user;
+  }, [user, users]);
+
+  const isDriver = resolvedMe?.type === 'driver';
+
+  /** All messages you sent, across every conversation (text, media, voice, location). */
+  const driverTotalSent = useMemo(() => {
+    if (!user?.id) return 0;
+    return messages.filter((m) => m.senderId === user.id).length;
+  }, [messages, user?.id]);
+
   const conversationList = useMemo(() => {
     if (!user) return [];
+
+    const sentByMeTo = new Map<string, number>();
+    messages.forEach((message) => {
+      if (message.senderId !== user.id) return;
+      const rid = message.receiverId;
+      sentByMeTo.set(rid, (sentByMeTo.get(rid) ?? 0) + 1);
+    });
 
     const conversations = new Map<
       string,
@@ -81,9 +103,12 @@ export default function MessagesScreen() {
       }
     });
 
-    return Array.from(conversations.values()).sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
+    return Array.from(conversations.values())
+      .map((c) => ({
+        ...c,
+        sentByMeCount: sentByMeTo.get(c.id) ?? 0,
+      }))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [messages, user, users]);
 
   const handleMessagePress = (userId: string) => {
@@ -103,9 +128,35 @@ export default function MessagesScreen() {
         style={styles.gradientBg}
       >
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Messages</Text>
-          <Text style={styles.headerSubtitle}>Chats with drivers and passengers</Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle}>Messages</Text>
+            {isDriver ? (
+              <View style={styles.driverBadge}>
+                <Text style={styles.driverBadgeText}>Driver</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.headerSubtitle}>
+            {isDriver
+              ? `You sent ${driverTotalSent} message${driverTotalSent === 1 ? '' : 's'} across all chats`
+              : 'Chats with drivers and passengers'}
+          </Text>
         </View>
+
+        {isDriver ? (
+          <View
+            style={styles.driverSentStrip}
+            accessibilityLabel={`Messages you sent in all chats: ${driverTotalSent}`}
+          >
+            <View style={styles.driverSentStripTextBlock}>
+              <Text style={styles.driverSentStripTitle}>Your messages sent</Text>
+              <Text style={styles.driverSentStripHint}>Total in every conversation</Text>
+            </View>
+            <View style={styles.driverSentStripPill}>
+              <Text style={styles.driverSentStripCount}>{driverTotalSent}</Text>
+            </View>
+          </View>
+        ) : null}
 
         {conversationList.length === 0 ? (
           <View style={styles.emptyWrap}>
@@ -142,7 +193,14 @@ export default function MessagesScreen() {
                       <Text style={styles.username} numberOfLines={1}>
                         {item.username}
                       </Text>
-                      <Text style={styles.time}>{formatConversationTime(item.timestamp)}</Text>
+                      <View style={styles.cardTopRight}>
+                        <Text style={styles.time}>{formatConversationTime(item.timestamp)}</Text>
+                        {isDriver ? (
+                          <View style={styles.rowSentBadge} accessibilityLabel={`You sent ${item.sentByMeCount} messages`}>
+                            <Text style={styles.rowSentBadgeText}>{item.sentByMeCount}</Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </View>
                     <Text style={styles.lastMessage} numberOfLines={2}>
                       {item.lastMessage}
@@ -179,7 +237,13 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 20,
+    paddingBottom: 16,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
   },
   headerTitle: {
     fontSize: 28,
@@ -187,11 +251,68 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     letterSpacing: -0.5,
   },
+  driverBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  driverBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: PRIMARY,
+    letterSpacing: 0.4,
+  },
   headerSubtitle: {
     marginTop: 6,
     fontSize: 14,
     color: '#64748b',
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  driverSentStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#eff6ff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  driverSentStripTextBlock: {
+    flex: 1,
+    marginRight: 12,
+  },
+  driverSentStripTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1e3a8a',
+  },
+  driverSentStripHint: {
+    marginTop: 2,
+    fontSize: 12,
     fontWeight: '500',
+    color: '#3b82f6',
+  },
+  driverSentStripPill: {
+    minWidth: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    backgroundColor: PRIMARY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverSentStripCount: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#fff',
   },
   listContent: {
     paddingHorizontal: 16,
@@ -226,9 +347,14 @@ const styles = StyleSheet.create({
   cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 4,
     gap: 8,
+  },
+  cardTopRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+    flexShrink: 0,
   },
   username: {
     flex: 1,
@@ -240,6 +366,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#94a3b8',
+  },
+  /** Driver: messages you sent in this chat — WhatsApp-style count on the right */
+  rowSentBadge: {
+    minWidth: 26,
+    height: 26,
+    paddingHorizontal: 8,
+    borderRadius: 13,
+    backgroundColor: PRIMARY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowSentBadgeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#fff',
   },
   lastMessage: {
     fontSize: 14,

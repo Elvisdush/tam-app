@@ -3,7 +3,10 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
-import { fetchBigDataCloudReverseGeo, formatAddressLineFromBdc } from '@/lib/reverse-geocode-net';
+import {
+  fetchBigDataCloudReverseGeo,
+  formatPlaceLineWithSectorFromBdc,
+} from '@/lib/reverse-geocode-net';
 import { fetchOsrmDrivingRoute } from '@/lib/osrm-route';
 
 /** Native watch subscription — must be removed to avoid duplicate watches and permission errors */
@@ -21,44 +24,69 @@ const NETWORK_REVERSE_GEOCODE_MIN_MS = 45_000;
  * Android: skip Expo reverseGeocodeAsync entirely — the system Geocoder often returns UNAVAILABLE and Expo still logs native rejections.
  * iOS: try system geocoder first, then HTTP fallback.
  */
-async function reverseGeocodeAddress(latitude: number, longitude: number): Promise<string | undefined> {
-  const useIosSystemGeocoder = Platform.OS === 'ios';
-
-  if (useIosSystemGeocoder && !nativeSystemGeocoderUnavailable) {
-    try {
-      const results = await Location.reverseGeocodeAsync({ latitude, longitude });
-      const address = results[0];
-      if (address) {
-        const line = `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim();
-        if (line) return line;
-      }
-    } catch {
-      nativeSystemGeocoderUnavailable = true;
-    }
-  }
-
-  const now = Date.now();
-  if (
-    now - lastNetworkGeocodeAt < NETWORK_REVERSE_GEOCODE_MIN_MS &&
-    lastNetworkAddress !== undefined
-  ) {
-    return lastNetworkAddress;
-  }
-
-  const data = await fetchBigDataCloudReverseGeo(latitude, longitude);
-  if (data) {
-    const line = formatAddressLineFromBdc(data);
-    if (line) {
-      lastNetworkGeocodeAt = now;
-      lastNetworkAddress = line;
-      return line;
-    }
-  }
-
+function coordFallback(latitude: number, longitude: number): string {
   const coords = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-  lastNetworkGeocodeAt = now;
+  lastNetworkGeocodeAt = Date.now();
   lastNetworkAddress = coords;
   return coords;
+}
+
+async function reverseGeocodeAddress(latitude: number, longitude: number): Promise<string | undefined> {
+  try {
+    const useIosSystemGeocoder = Platform.OS === 'ios';
+
+    if (useIosSystemGeocoder && !nativeSystemGeocoderUnavailable) {
+      try {
+        const results = await Location.reverseGeocodeAsync({ latitude, longitude });
+        const address = results[0];
+        if (address) {
+          const line = `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim();
+          if (line) {
+            const now = Date.now();
+            if (
+              now - lastNetworkGeocodeAt < NETWORK_REVERSE_GEOCODE_MIN_MS &&
+              lastNetworkAddress !== undefined
+            ) {
+              return lastNetworkAddress;
+            }
+            const data = await fetchBigDataCloudReverseGeo(latitude, longitude);
+            const rich = data ? formatPlaceLineWithSectorFromBdc(data) : undefined;
+            if (rich) {
+              lastNetworkGeocodeAt = now;
+              lastNetworkAddress = rich;
+              return rich;
+            }
+            return line;
+          }
+        }
+      } catch {
+        nativeSystemGeocoderUnavailable = true;
+      }
+    }
+
+    const now = Date.now();
+    if (
+      now - lastNetworkGeocodeAt < NETWORK_REVERSE_GEOCODE_MIN_MS &&
+      lastNetworkAddress !== undefined
+    ) {
+      return lastNetworkAddress;
+    }
+
+    const data = await fetchBigDataCloudReverseGeo(latitude, longitude);
+    if (data) {
+      const line = formatPlaceLineWithSectorFromBdc(data);
+      if (line) {
+        lastNetworkGeocodeAt = now;
+        lastNetworkAddress = line;
+        return line;
+      }
+    }
+
+    return coordFallback(latitude, longitude);
+  } catch (e) {
+    console.warn('[location] reverseGeocodeAddress failed', e);
+    return coordFallback(latitude, longitude);
+  }
 }
 
 function parseGoogleDurationSeconds(duration: unknown): number {
@@ -86,6 +114,7 @@ const calculateDistanceHelper = (lat1: number, lon1: number, lat2: number, lon2:
 export interface LocationData {
   latitude: number;
   longitude: number;
+  /** Human-readable line (includes sector when available from reverse geocode) */
   address?: string;
   timestamp: string;
 }
@@ -192,14 +221,12 @@ export const useLocationStore = create<LocationState>()(
             
             // Try to get address using reverse geocoding API
             try {
-              const response = await fetch(
-                `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`
+              const data = await fetchBigDataCloudReverseGeo(
+                position.coords.latitude,
+                position.coords.longitude
               );
-              const data = await response.json();
-              
-              if (data && (data.locality || data.city || data.principalSubdivision)) {
-                locationData.address = `${data.locality || data.city || ''} ${data.principalSubdivision || ''}`.trim();
-              }
+              const line = data ? formatPlaceLineWithSectorFromBdc(data) : undefined;
+              if (line) locationData.address = line;
             } catch (error) {
               console.log('Web reverse geocoding failed:', error);
             }
@@ -265,14 +292,12 @@ export const useLocationStore = create<LocationState>()(
               
               // Try to get address using reverse geocoding API for web tracking
               try {
-                const response = await fetch(
-                  `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`
+                const data = await fetchBigDataCloudReverseGeo(
+                  position.coords.latitude,
+                  position.coords.longitude
                 );
-                const data = await response.json();
-                
-                if (data && (data.locality || data.city || data.principalSubdivision)) {
-                  locationData.address = `${data.locality || data.city || ''} ${data.principalSubdivision || ''}`.trim();
-                }
+                const line = data ? formatPlaceLineWithSectorFromBdc(data) : undefined;
+                if (line) locationData.address = line;
               } catch (error) {
                 console.log('Web reverse geocoding failed:', error);
               }

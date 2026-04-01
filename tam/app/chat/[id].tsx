@@ -79,18 +79,17 @@ export default function ChatScreen() {
     (m.senderId === chatPartnerId && m.receiverId === user?.id)
   );
 
-  /** Prefer live user row from Firebase — persisted session can miss or stale `type`. */
   const resolvedMe = useMemo(() => {
     if (!user?.id) return null;
-    const fromList = users.find((u) => u.id === user.id);
-    return fromList ?? user;
+    return users.find((u) => u.id === user.id) ?? user;
   }, [user, users]);
-
   const isDriver = resolvedMe?.type === 'driver';
-  const driverSentCount = useMemo(
-    () => chatMessages.filter((m) => m.senderId === user?.id).length,
-    [chatMessages, user?.id]
-  );
+
+  /** Drivers only see what the passenger (chat partner) sent — not their own outgoing messages. */
+  const displayMessages = useMemo(() => {
+    if (!isDriver || !chatPartnerId) return chatMessages;
+    return chatMessages.filter((m) => m.senderId === chatPartnerId);
+  }, [chatMessages, isDriver, chatPartnerId]);
 
   const handleSendMessage = async () => {
     if (message.trim() && user && chatPartnerId) {
@@ -434,7 +433,10 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: any }) => {
     const isMyMessage = item.senderId === user?.id;
-    const driverOutgoing = isDriver && isMyMessage;
+    const senderUser = users.find((u) => u.id === item.senderId);
+    const senderIsPassenger =
+      senderUser?.type === 'passenger' ||
+      (item.senderId === user?.id && user?.type === 'passenger');
     const isPlaying = playingVoiceId === item.id;
     const partnerUri = chatPartner?.profileImage?.startsWith('blob:')
       ? 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop'
@@ -465,7 +467,7 @@ export default function ChatScreen() {
                 style={[
                   styles.locationTitle,
                   isMyMessage ? styles.myMessageText : styles.otherMessageText,
-                  driverOutgoing && styles.driverSentLocationTitle,
+                  senderIsPassenger && styles.passengerMessageBold,
                 ]}
               >
                 {item.location?.address || 'Shared Location'}
@@ -506,7 +508,7 @@ export default function ChatScreen() {
               style={[
                 styles.voiceDuration,
                 isMyMessage ? styles.myMessageText : styles.otherMessageText,
-                driverOutgoing && styles.driverSentVoiceMeta,
+                senderIsPassenger && styles.passengerMessageBold,
               ]}
             >
               {item.duration}s
@@ -517,7 +519,7 @@ export default function ChatScreen() {
             style={[
               styles.messageText,
               isMyMessage ? styles.myMessageText : styles.otherMessageText,
-              driverOutgoing && styles.driverSentMessageText,
+              senderIsPassenger && styles.passengerMessageBold,
             ]}
           >
             {item.content}
@@ -549,11 +551,7 @@ export default function ChatScreen() {
               colors={[PRIMARY, PRIMARY_DARK]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[
-                styles.messageBubble,
-                styles.myMessageBubble,
-                driverOutgoing && styles.driverMyBubble,
-              ]}
+              style={[styles.messageBubble, styles.myMessageBubble]}
             >
               {bubbleContent}
             </LinearGradient>
@@ -591,20 +589,11 @@ export default function ChatScreen() {
         />
 
         <View style={styles.headerTextBlock}>
-          <View style={styles.headerTitleRow}>
-            <Text style={styles.headerName} numberOfLines={1}>
-              {chatPartner?.username || 'Unknown User'}
-            </Text>
-            {isDriver ? (
-              <View style={styles.driverBadge}>
-                <Text style={styles.driverBadgeText}>Driver</Text>
-              </View>
-            ) : null}
-          </View>
-          <Text style={styles.headerSubtitle} numberOfLines={2}>
-            {isDriver
-              ? `You sent ${driverSentCount} message${driverSentCount === 1 ? '' : 's'} in this chat`
-              : 'In-app messages'}
+          <Text style={styles.headerName} numberOfLines={1}>
+            {chatPartner?.username || 'Unknown User'}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            {isDriver ? 'Passenger messages only' : 'In-app messages'}
           </Text>
         </View>
 
@@ -617,26 +606,28 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      {isDriver ? (
-        <View
-          style={styles.driverSentStrip}
-          accessibilityLabel={`Your messages sent: ${driverSentCount}`}
-        >
-          <Text style={styles.driverSentStripLabel}>Your messages sent</Text>
-          <View style={styles.driverSentStripPill}>
-            <Text style={styles.driverSentStripCount}>{driverSentCount}</Text>
-          </View>
-        </View>
-      ) : null}
-
       <View style={styles.keyboardAvoiding}>
         <FlatList
           ref={listRef}
-          data={chatMessages}
+          data={displayMessages}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
           style={styles.messagesList}
-          contentContainerStyle={styles.messagesContent}
+          contentContainerStyle={[
+            styles.messagesContent,
+            displayMessages.length === 0 && styles.messagesContentEmpty,
+          ]}
+          ListEmptyComponent={
+            isDriver ? (
+              <View style={styles.driverEmptyThread}>
+                <Text style={styles.driverEmptyTitle}>No messages from passenger yet</Text>
+                <Text style={styles.driverEmptyHint}>
+                  Only what {chatPartner?.username || 'the passenger'} sends appears in this list. You can still reply
+                  below — your messages are hidden here on purpose.
+                </Text>
+              </View>
+            ) : null
+          }
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -745,67 +736,17 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    minWidth: 0,
-  },
   headerName: {
-    flex: 1,
     fontSize: 17,
     fontWeight: '700',
     color: '#0f172a',
     letterSpacing: -0.2,
   },
-  driverBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-  },
-  driverBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: PRIMARY,
-    letterSpacing: 0.3,
-  },
   headerSubtitle: {
     marginTop: 2,
     fontSize: 12,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  driverSentStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#eff6ff',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#bfdbfe',
-  },
-  driverSentStripLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1e40af',
-  },
-  driverSentStripPill: {
-    minWidth: 40,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  driverSentStripCount: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#fff',
+    fontWeight: '500',
+    color: '#94a3b8',
   },
   shareLocationButton: {
     width: 44,
@@ -823,6 +764,28 @@ const styles = StyleSheet.create({
   messagesContent: {
     paddingHorizontal: 14,
     paddingVertical: 16,
+  },
+  messagesContentEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  driverEmptyThread: {
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  driverEmptyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0f172a',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  driverEmptyHint: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#64748b',
+    textAlign: 'center',
   },
   messageRow: {
     width: '100%',
@@ -855,12 +818,6 @@ const styles = StyleSheet.create({
   myMessageBubble: {
     borderBottomRightRadius: 6,
   },
-  driverMyBubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: 'rgba(255,255,255,0.95)',
-  },
   otherMessageBubble: {
     backgroundColor: BUBBLE_OTHER,
     borderBottomLeftRadius: 6,
@@ -872,20 +829,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
-  /** Driver’s own bubbles: stronger emphasis on outgoing copy */
-  driverSentMessageText: {
-    fontSize: 20,
-    lineHeight: 28,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-  driverSentLocationTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  driverSentVoiceMeta: {
-    fontSize: 15,
-    fontWeight: '800',
+  /** Any message sent by a user with type passenger */
+  passengerMessageBold: {
+    fontWeight: '700',
+    fontSize: 16,
+    lineHeight: 22,
   },
   myMessageText: {
     color: '#fff',
