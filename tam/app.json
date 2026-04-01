@@ -4,14 +4,14 @@
     "slug": "tam-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/branding/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/images/branding/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "transparent"
+      "backgroundColor": "#f0f9ff"
     },
     "ios": {
       "supportsTablet": true,
@@ -39,8 +39,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/branding/adaptive-icon.png",
+        "backgroundColor": "#f0f9ff"
       },
       "package": "app.rork.tam-app",
       "permissions": [
@@ -56,7 +56,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/branding/favicon.png"
     },
     "plugins": [
       [
