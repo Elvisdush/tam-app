@@ -22,8 +22,13 @@ export default function RootLayout() {
     loadUsers();
     loadMessages();
     loadRides();
-    (window as any).__authStore = { getState: () => ({ user: useAuthStore.getState().user }) };
-    SplashScreen.hideAsync();
+    try {
+      const g = globalThis as typeof globalThis & { __authStore?: { getState: () => { user: unknown } } };
+      g.__authStore = { getState: () => ({ user: useAuthStore.getState().user }) };
+    } catch {
+      /* dev helpers only — must not break native */
+    }
+    void SplashScreen.hideAsync().catch(() => {});
   }, [loadUsers, loadMessages, loadRides]);
 
   return (

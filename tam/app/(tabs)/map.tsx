@@ -14,6 +14,7 @@ import { getNavigationGuidance } from '@/lib/navigation/guidance';
 import { useNavigationPose } from '@/hooks/useNavigationPose';
 import { buildRwandaSuggestions } from '@/lib/rwanda-destination-search';
 import type { LocationSuggestion } from '@/lib/places-search';
+import { reverseGeocodePlaceLine } from '@/lib/reverse-geocode-net';
 
 /** Safely get string from route params (can be string | string[] | undefined) */
 function safeParam(p: string | string[] | undefined): string {
@@ -32,6 +33,8 @@ export default function MapScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const [selectedDestination, setSelectedDestination] = useState<{ latitude: number; longitude: number; address: string } | null>(null);
   const [isNavigationMode, setIsNavigationMode] = useState(false);
+  /** Reverse-geocoded label (sector · locality · province) for shared pin when params omit it */
+  const [sharedPlaceLabel, setSharedPlaceLabel] = useState<string | null>(null);
 
   const {
     currentLocation,
@@ -82,6 +85,20 @@ export default function MapScreen() {
   }, [startLocationTracking]);
 
   useEffect(() => {
+    if (showLocation !== 'true' || sharedLat == null || sharedLng == null) {
+      setSharedPlaceLabel(null);
+      return;
+    }
+    let cancelled = false;
+    void reverseGeocodePlaceLine(sharedLat, sharedLng).then((line) => {
+      if (!cancelled && line) setSharedPlaceLabel(line);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showLocation, sharedLat, sharedLng]);
+
+  useEffect(() => {
     if (showLocation !== 'true' || !sharedLat || !sharedLng || !currentLocation) {
       return;
     }
@@ -89,7 +106,7 @@ export default function MapScreen() {
       latitude: sharedLat,
       longitude: sharedLng,
       timestamp: new Date().toISOString(),
-      address: addressStr
+      address: sharedPlaceLabel || addressStr,
     };
 
     calculateRoute(currentLocation, destination).then((route) => {
@@ -101,12 +118,15 @@ export default function MapScreen() {
     const interval = setInterval(() => {
       const loc = useLocationStore.getState().currentLocation;
       if (loc) {
-        calculateRoute(loc, destination);
+        calculateRoute(loc, {
+          ...destination,
+          address: sharedPlaceLabel || addressStr,
+        });
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [showLocation, sharedLat, sharedLng, currentLocation, addressStr, calculateRoute]);
+  }, [showLocation, sharedLat, sharedLng, currentLocation, addressStr, sharedPlaceLabel, calculateRoute]);
   
   useEffect(() => {
     return () => {
@@ -122,13 +142,16 @@ export default function MapScreen() {
     Keyboard.dismiss();
     
     if (currentLocation) {
+      const placeLine = await reverseGeocodePlaceLine(suggestion.latitude, suggestion.longitude);
       const destination = {
         latitude: suggestion.latitude,
         longitude: suggestion.longitude,
         timestamp: new Date().toISOString(),
-        address: `${suggestion.name} · ${suggestion.address}`,
+        address: placeLine
+          ? `${suggestion.name} · ${placeLine}`
+          : `${suggestion.name} · ${suggestion.address}`,
       };
-      
+
       setSelectedDestination(destination);
       
       const route = await calculateRoute(currentLocation, destination);
@@ -158,11 +181,12 @@ export default function MapScreen() {
   
   const handleGetDirections = async () => {
     if (sharedLat && sharedLng && currentLocation) {
+      const placeLine = sharedPlaceLabel || (await reverseGeocodePlaceLine(sharedLat, sharedLng)) || addressStr;
       const destination = {
         latitude: sharedLat,
         longitude: sharedLng,
         timestamp: new Date().toISOString(),
-        address: addressStr
+        address: placeLine,
       };
       
       const route = await calculateRoute(currentLocation, destination);
@@ -232,7 +256,7 @@ export default function MapScreen() {
             currentLocation={currentLocation}
             sharedLat={selectedDestination?.latitude || sharedLat}
             sharedLng={selectedDestination?.longitude || sharedLng}
-            address={selectedDestination?.address || addressStr}
+            address={selectedDestination?.address || sharedPlaceLabel || addressStr}
             showLocation={showLocation === 'true' || !!selectedDestination}
             showDirections={showDirections}
             currentRoute={currentRoute}
@@ -249,7 +273,9 @@ export default function MapScreen() {
           <View style={styles.locationInfoPanel}>
             <View style={styles.locationHeader}>
               <MapPin color="#007AFF" size={20} />
-              <Text style={styles.locationTitle}>{addressStr || 'Shared Location'}</Text>
+              <Text style={styles.locationTitle}>
+                {sharedPlaceLabel || addressStr || 'Shared Location'}
+              </Text>
             </View>
             <Text style={styles.locationSubtitle}>
               Shared by {safeParam(senderId) === user?.id ? 'You' : 'Contact'}
@@ -328,6 +354,15 @@ export default function MapScreen() {
             <Search color="white" size={20} />
           </TouchableOpacity>
         </View>
+        )}
+
+        {!isNavigationMode && currentLocation?.address && !isFocused && (
+          <View style={[styles.myLocationBar, { top: searchTop + 56 }]}>
+            <MapPin color="#64748b" size={16} />
+            <Text style={styles.myLocationBarText} numberOfLines={2}>
+              {currentLocation.address}
+            </Text>
+          </View>
         )}
 
         {isNavigationMode && navigationGuidance && (
@@ -546,6 +581,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#33ccff',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  myLocationBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e2e8f0',
+    zIndex: 4,
+  },
+  myLocationBarText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+    lineHeight: 18,
   },
   wazeSuggestionsPanel: {
     position: 'absolute',
