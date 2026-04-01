@@ -79,6 +79,19 @@ export default function ChatScreen() {
     (m.senderId === chatPartnerId && m.receiverId === user?.id)
   );
 
+  /** Prefer live user row from Firebase — persisted session can miss or stale `type`. */
+  const resolvedMe = useMemo(() => {
+    if (!user?.id) return null;
+    const fromList = users.find((u) => u.id === user.id);
+    return fromList ?? user;
+  }, [user, users]);
+
+  const isDriver = resolvedMe?.type === 'driver';
+  const driverSentCount = useMemo(
+    () => chatMessages.filter((m) => m.senderId === user?.id).length,
+    [chatMessages, user?.id]
+  );
+
   const handleSendMessage = async () => {
     if (message.trim() && user && chatPartnerId) {
       const ok = await sendMessage({
@@ -421,6 +434,7 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: any }) => {
     const isMyMessage = item.senderId === user?.id;
+    const driverOutgoing = isDriver && isMyMessage;
     const isPlaying = playingVoiceId === item.id;
     const partnerUri = chatPartner?.profileImage?.startsWith('blob:')
       ? 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop'
@@ -447,7 +461,13 @@ export default function ChatScreen() {
           >
             <MapPin color={isMyMessage ? '#fff' : PRIMARY} size={20} />
             <View style={styles.locationTextContainer}>
-              <Text style={[styles.locationTitle, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+              <Text
+                style={[
+                  styles.locationTitle,
+                  isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                  driverOutgoing && styles.driverSentLocationTitle,
+                ]}
+              >
                 {item.location?.address || 'Shared Location'}
               </Text>
               <Text style={[styles.locationSubtitle, isMyMessage ? styles.myMessageSub : styles.otherMessageSub]}>
@@ -482,12 +502,24 @@ export default function ChatScreen() {
                 />
               ))}
             </View>
-            <Text style={[styles.voiceDuration, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+            <Text
+              style={[
+                styles.voiceDuration,
+                isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                driverOutgoing && styles.driverSentVoiceMeta,
+              ]}
+            >
               {item.duration}s
             </Text>
           </View>
         ) : (
-          <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+          <Text
+            style={[
+              styles.messageText,
+              isMyMessage ? styles.myMessageText : styles.otherMessageText,
+              driverOutgoing && styles.driverSentMessageText,
+            ]}
+          >
             {item.content}
           </Text>
         )}
@@ -517,7 +549,11 @@ export default function ChatScreen() {
               colors={[PRIMARY, PRIMARY_DARK]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[styles.messageBubble, styles.myMessageBubble]}
+              style={[
+                styles.messageBubble,
+                styles.myMessageBubble,
+                driverOutgoing && styles.driverMyBubble,
+              ]}
             >
               {bubbleContent}
             </LinearGradient>
@@ -555,10 +591,21 @@ export default function ChatScreen() {
         />
 
         <View style={styles.headerTextBlock}>
-          <Text style={styles.headerName} numberOfLines={1}>
-            {chatPartner?.username || 'Unknown User'}
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerName} numberOfLines={1}>
+              {chatPartner?.username || 'Unknown User'}
+            </Text>
+            {isDriver ? (
+              <View style={styles.driverBadge}>
+                <Text style={styles.driverBadgeText}>Driver</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.headerSubtitle} numberOfLines={2}>
+            {isDriver
+              ? `You sent ${driverSentCount} message${driverSentCount === 1 ? '' : 's'} in this chat`
+              : 'In-app messages'}
           </Text>
-          <Text style={styles.headerSubtitle}>In-app messages</Text>
         </View>
 
         <TouchableOpacity
@@ -569,6 +616,18 @@ export default function ChatScreen() {
           <MapPin color={PRIMARY} size={22} strokeWidth={2.2} />
         </TouchableOpacity>
       </View>
+
+      {isDriver ? (
+        <View
+          style={styles.driverSentStrip}
+          accessibilityLabel={`Your messages sent: ${driverSentCount}`}
+        >
+          <Text style={styles.driverSentStripLabel}>Your messages sent</Text>
+          <View style={styles.driverSentStripPill}>
+            <Text style={styles.driverSentStripCount}>{driverSentCount}</Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.keyboardAvoiding}>
         <FlatList
@@ -686,17 +745,67 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+  },
   headerName: {
+    flex: 1,
     fontSize: 17,
     fontWeight: '700',
     color: '#0f172a',
     letterSpacing: -0.2,
   },
+  driverBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  driverBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: PRIMARY,
+    letterSpacing: 0.3,
+  },
   headerSubtitle: {
     marginTop: 2,
     fontSize: 12,
-    fontWeight: '500',
-    color: '#94a3b8',
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  driverSentStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#eff6ff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#bfdbfe',
+  },
+  driverSentStripLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1e40af',
+  },
+  driverSentStripPill: {
+    minWidth: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: PRIMARY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverSentStripCount: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
   },
   shareLocationButton: {
     width: 44,
@@ -746,6 +855,12 @@ const styles = StyleSheet.create({
   myMessageBubble: {
     borderBottomRightRadius: 6,
   },
+  driverMyBubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: 'rgba(255,255,255,0.95)',
+  },
   otherMessageBubble: {
     backgroundColor: BUBBLE_OTHER,
     borderBottomLeftRadius: 6,
@@ -756,6 +871,21 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     lineHeight: 22,
+  },
+  /** Driver’s own bubbles: stronger emphasis on outgoing copy */
+  driverSentMessageText: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  driverSentLocationTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  driverSentVoiceMeta: {
+    fontSize: 15,
+    fontWeight: '800',
   },
   myMessageText: {
     color: '#fff',
