@@ -47,14 +47,28 @@ export default function SignInScreen() {
     const result = await requestSignInOtp(email);
     if (result.ok) {
       if (result.devOtpCode) {
-        Alert.alert('Development', `Email not configured. Your OTP is ${result.devOtpCode}`);
+        Alert.alert('Development', `SMS not configured. Your OTP is ${result.devOtpCode}`);
       }
       router.push({ pathname: '/auth/otp-verify', params: { email: email.trim() } });
     } else {
-      if (result.error === 'email_not_configured') {
+      if (result.error === 'sms_not_configured') {
         Alert.alert(
-          'Email not available',
-          'Add EXPO_PUBLIC_RESEND_API_KEY (and a verified EXPO_PUBLIC_RESEND_FROM) to send sign-in codes.'
+          'SMS not available',
+          'Add Twilio to .env: EXPO_PUBLIC_TWILIO_ACCOUNT_SID, EXPO_PUBLIC_TWILIO_AUTH_TOKEN, EXPO_PUBLIC_TWILIO_FROM, then restart Expo.'
+        );
+        return;
+      }
+      if (result.error === 'no_phone') {
+        Alert.alert(
+          'No phone number',
+          'Your account does not have a phone number on file. Update your profile or create a new account with a phone number.'
+        );
+        return;
+      }
+      if (result.error === 'invalid_phone') {
+        Alert.alert(
+          'Invalid phone number',
+          'The phone number saved on your account could not be used for SMS. Edit your profile to use a full number with country code.'
         );
         return;
       }
@@ -99,14 +113,16 @@ export default function SignInScreen() {
 
           <Text style={styles.kicker}>Welcome back</Text>
           <Text style={styles.title}>Sign in</Text>
-          <Text style={styles.subtitle}>Enter your account email. We’ll send you a one-time code to sign in.</Text>
+          <Text style={styles.subtitle}>
+            Enter your account email. We’ll text a one-time code to the phone number you used when you registered.
+          </Text>
 
           <View style={styles.card}>
             <View style={styles.notice}>
               <Info color={AUTH.primary} size={20} strokeWidth={2} style={styles.noticeIcon} />
               <Text style={styles.noticeText}>
-                Enter the email you used when you created your account here. We’ll email you a one-time code—enter it on
-                the next screen to sign in.
+                Enter the same email you used when you created your passenger account. We’ll send a one-time code by SMS
+                to the phone number on your profile—enter it on the next screen to sign in.
               </Text>
             </View>
 

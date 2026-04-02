@@ -12,7 +12,8 @@ import {
   deleteSignInOtp,
   OTP_TTL_MS,
 } from '@/lib/otp-signin';
-import { sendSignInOtpEmail } from '@/lib/otp-email';
+import { sendSignInOtpSms } from '@/lib/otp-sms';
+import { maskPhoneForDisplay, normalizePhoneForSms } from '@/lib/phone';
 
 /** Firebase Realtime Database rejects `undefined` in update(); omit those keys. */
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
@@ -25,8 +26,8 @@ interface AuthState {
   user: User | null;
   users: User[];
   isAuthenticated: boolean;
-  /** Not persisted — email only until OTP is verified or cleared. */
-  pendingAuth: { email: string } | null;
+  /** Not persisted — until OTP is verified or cleared. */
+  pendingAuth: { email: string; phoneMasked: string } | null;
   pendingOtpExpiresAt: number | null;
   requestSignInOtp: (email: string) => Promise<SignInOtpResult>;
   verifySignInOtp: (email: string, otp: string) => Promise<boolean>;
@@ -67,13 +68,25 @@ export const useAuthStore = create<AuthState>()(
             return { ok: false, error: 'invalid_credentials' };
           }
 
+          const rawPhone = typeof user.phone === 'string' ? user.phone : '';
+          if (!rawPhone.trim()) {
+            return { ok: false, error: 'no_phone' };
+          }
+
+          const phoneE164 = normalizePhoneForSms(rawPhone);
+          if (!phoneE164) {
+            return { ok: false, error: 'invalid_phone' };
+          }
+
+          const phoneMasked = maskPhoneForDisplay(phoneE164);
+
           const code = generateSixDigitCode();
           const expiresAt = Date.now() + OTP_TTL_MS;
           await writeSignInOtp(trimmedEmail, { code, expiresAt, userId: user.id });
 
-          const sent = await sendSignInOtpEmail(trimmedEmail, code);
+          const sent = await sendSignInOtpSms(phoneE164, code);
           set({
-            pendingAuth: { email: trimmedEmail },
+            pendingAuth: { email: trimmedEmail, phoneMasked },
             pendingOtpExpiresAt: expiresAt,
           });
 
@@ -83,7 +96,7 @@ export const useAuthStore = create<AuthState>()(
             }
             await deleteSignInOtp(trimmedEmail);
             set({ pendingAuth: null, pendingOtpExpiresAt: null });
-            return { ok: false, error: 'email_not_configured' };
+            return { ok: false, error: 'sms_not_configured' };
           }
 
           return { ok: true };

@@ -14,7 +14,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ChevronLeft, Shield } from 'lucide-react-native';
+import { ChevronLeft, Smartphone } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth-store';
 import { BrandingLogo } from '@/components/branding/BrandingLogo';
@@ -29,6 +29,7 @@ function formatMmSs(totalSeconds: number): string {
 export default function OtpVerifyScreen() {
   const insets = useSafeAreaInsets();
   const { email: emailParam } = useLocalSearchParams<{ email?: string }>();
+  const phoneMasked = useAuthStore((s) => s.pendingAuth?.phoneMasked ?? '');
   const pendingOtpExpiresAt = useAuthStore((s) => s.pendingOtpExpiresAt);
   const verifySignInOtp = useAuthStore((s) => s.verifySignInOtp);
   const resendSignInOtp = useAuthStore((s) => s.resendSignInOtp);
@@ -75,7 +76,7 @@ export default function OtpVerifyScreen() {
       if (ok) {
         router.replace('/home');
       } else {
-        Alert.alert('Invalid or expired code', 'Check the code from your email or request a new one.');
+        Alert.alert('Invalid or expired code', 'Check the text message we sent or request a new code.');
       }
     } finally {
       setSubmitting(false);
@@ -89,14 +90,17 @@ export default function OtpVerifyScreen() {
       const result = await resendSignInOtp();
       if (result.ok) {
         if (result.devOtpCode) {
-          Alert.alert('Development', `Email not configured. Your OTP is ${result.devOtpCode}`);
+          Alert.alert('Development', `SMS not configured. Your OTP is ${result.devOtpCode}`);
         } else {
-          Alert.alert('Code sent', 'We sent a new code to your email.');
+          Alert.alert('Code sent', 'We sent a new code by text message.');
         }
       } else if (result.error === 'no_pending') {
         router.replace('/auth/sign-in');
-      } else if (result.error === 'email_not_configured') {
-        Alert.alert('Email not available', 'Configure EXPO_PUBLIC_RESEND_API_KEY to send codes by email.');
+      } else if (result.error === 'sms_not_configured') {
+        Alert.alert(
+          'SMS not available',
+          'Configure Twilio in .env (EXPO_PUBLIC_TWILIO_*) and restart Expo.'
+        );
       } else {
         Alert.alert('Could not resend', 'Please try again.');
       }
@@ -143,16 +147,17 @@ export default function OtpVerifyScreen() {
         >
           <BrandingLogo size={96} containerStyle={styles.logoWrap} />
 
-          <Text style={styles.kicker}>Check your email</Text>
+          <Text style={styles.kicker}>Check your phone</Text>
           <Text style={styles.title}>Enter code</Text>
           <Text style={styles.subtitle}>
-            We sent a 6-digit code to{' '}
-            <Text style={styles.subtitleStrong}>{email || 'your email'}</Text>. It expires in 2 minutes.
+            We texted a 6-digit code to{' '}
+            <Text style={styles.subtitleStrong}>{phoneMasked || 'your phone'}</Text> (the number on your account). It
+            expires in 2 minutes.
           </Text>
 
           <View style={styles.card}>
             <View style={styles.timerRow}>
-              <Shield color={AUTH.primary} size={18} strokeWidth={2} />
+              <Smartphone color={AUTH.primary} size={18} strokeWidth={2} />
               <Text style={styles.timerText}>
                 {expired ? 'Code expired' : `Expires in ${formatMmSs(secondsLeft)}`}
               </Text>
