@@ -17,7 +17,7 @@ let nativeSystemGeocoderUnavailable = false;
 
 let lastNetworkGeocodeAt = 0;
 let lastNetworkAddress: string | undefined;
-const NETWORK_REVERSE_GEOCODE_MIN_MS = 45_000;
+const NETWORK_REVERSE_GEOCODE_MIN_MS = 120_000; // Increased from 45s to 2min
 
 /**
  * Human-readable place line for current coordinates.
@@ -318,9 +318,9 @@ export const useLocationStore = create<LocationState>()(
           try {
             nativeLocationSubscription = await Location.watchPositionAsync(
               {
-                accuracy: Location.Accuracy.High,
-                timeInterval: 5000,
-                distanceInterval: 10,
+                accuracy: Location.Accuracy.Balanced, // Changed from High to Balanced
+                timeInterval: 10000, // Increased from 5s to 10s
+                distanceInterval: 50, // Increased from 10m to 50m
               },
               async (location) => {
                 const locationData: LocationData = {
@@ -443,7 +443,18 @@ export const useLocationStore = create<LocationState>()(
         };
 
         try {
-          const apiKey = 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U';
+          // Use OSRM first for better performance and reliability
+          const osrm = await applyOsrmIfPossible();
+          if (osrm) {
+            set({ currentRoute: osrm, isCalculatingRoute: false });
+            return osrm;
+          }
+
+          // Fallback to Google Routes with timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+          
+          const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U';
           const url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
           const requestBody = {
@@ -485,7 +496,10 @@ export const useLocationStore = create<LocationState>()(
                 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration',
             },
             body: JSON.stringify(requestBody),
+            signal: controller.signal,
           });
+
+          clearTimeout(timeoutId);
 
           const data = await response.json();
 
@@ -560,14 +574,16 @@ export const useLocationStore = create<LocationState>()(
             return routeData;
           }
 
-          const osrm = await applyOsrmIfPossible();
-          const routeData = osrm ?? buildStraightLineFallback();
+          const fallbackOsrm = await applyOsrmIfPossible();
+          const routeData = fallbackOsrm ?? buildStraightLineFallback();
           set({ currentRoute: routeData, isCalculatingRoute: false });
           return routeData;
         } catch (error) {
-          console.log('Route calculation error:', error);
-          const osrm = await applyOsrmIfPossible();
-          const routeData = osrm ?? buildStraightLineFallback();
+          if (__DEV__) {
+            console.log('Route calculation error:', error);
+          }
+          const errorOsrm = await applyOsrmIfPossible();
+          const routeData = errorOsrm ?? buildStraightLineFallback();
           set({ currentRoute: routeData, isCalculatingRoute: false });
           return routeData;
         }
