@@ -3,10 +3,14 @@ export interface User {
   username: string;
   email: string;
   phone: string;
-  password: string;
-  profileImage: string;
+  password?: string; // Made optional for OAuth users
+  profileImage?: string; // Made optional
   vehicleImage?: string;
   type: 'driver' | 'passenger';
+  /** OAuth providers linked to this account (e.g., ['google:123456', 'apple:789012']) */
+  oauthProviders?: string[];
+  /** When the account was created */
+  createdAt?: string;
   /** Driver vehicle — used for “nearby taxi” counts when the driver is online */
   vehicleType?: 'car' | 'motorbike';
   /** License plate — shown to passengers on map booking */

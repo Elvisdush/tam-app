@@ -18,6 +18,7 @@ import { ChevronLeft, Mail, Info } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth-store';
 import { BrandingLogo } from '@/components/branding/BrandingLogo';
+import { OAuthButtons } from '@/components/auth/oauth-buttons';
 import { AUTH } from '@/constants/auth-theme';
 
 export default function SignInScreen() {
@@ -78,6 +79,15 @@ export default function SignInScreen() {
       setEmailError(true);
       shakeField(emailShake);
     }
+  };
+
+  const handleOAuthError = (error: string) => {
+    Alert.alert('Sign-in Error', error);
+  };
+
+  const handleOAuthSuccess = () => {
+    // Navigate to home or appropriate screen after successful OAuth sign-in
+    router.replace('/');
   };
 
   return (
@@ -165,6 +175,11 @@ export default function SignInScreen() {
                 <Text style={styles.linkStrong}>Create account</Text>
               </TouchableOpacity>
             </View>
+
+            <OAuthButtons 
+              onError={handleOAuthError}
+              onSuccess={handleOAuthSuccess}
+            />
           </View>
         </ScrollView>
       </View>

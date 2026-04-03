@@ -14,6 +14,7 @@ import {
 } from '@/lib/otp-signin';
 import { sendSignInOtpSms } from '@/lib/otp-sms';
 import { maskPhoneForDisplay, normalizePhoneForSms } from '@/lib/phone';
+import { signInWithGoogle, signInWithApple, signOutOAuth, OAuthUser, OAuthProvider } from '@/lib/oauth';
 
 /** Firebase Realtime Database rejects `undefined` in update(); omit those keys. */
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
@@ -21,6 +22,7 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): Record<string
 }
 
 export type SignInOtpResult = { ok: true; devOtpCode?: string } | { ok: false; error: string };
+export type SignInOAuthResult = { ok: true; user: OAuthUser } | { ok: false; error: string };
 
 interface AuthState {
   user: User | null;
@@ -32,6 +34,7 @@ interface AuthState {
   requestSignInOtp: (email: string) => Promise<SignInOtpResult>;
   verifySignInOtp: (email: string, otp: string) => Promise<boolean>;
   resendSignInOtp: () => Promise<SignInOtpResult>;
+  signInWithOAuth: (provider: OAuthProvider) => Promise<SignInOAuthResult>;
   clearPendingAuth: () => void;
   register: (userData: Omit<User, 'id'>) => Promise<void>;
   updateUser: (userData: User) => Promise<boolean>;
@@ -49,6 +52,79 @@ export const useAuthStore = create<AuthState>()(
       pendingOtpExpiresAt: null,
 
       clearPendingAuth: () => set({ pendingAuth: null, pendingOtpExpiresAt: null }),
+
+      signInWithOAuth: async (provider) => {
+        try {
+          let oauthUser: OAuthUser | null = null;
+
+          switch (provider) {
+            case 'google':
+              oauthUser = await signInWithGoogle();
+              break;
+            case 'apple':
+              oauthUser = await signInWithApple();
+              break;
+            default:
+              return { ok: false, error: 'unsupported_provider' };
+          }
+
+          if (!oauthUser) {
+            return { ok: false, error: 'oauth_failed' };
+          }
+
+          // Check if user already exists in Firebase
+          const usersRef = ref(database, 'users');
+          const snapshot = await firebaseGet(usersRef);
+          
+          if (snapshot.exists()) {
+            const data = snapshot.val() as Record<string, User>;
+            const existingUser = Object.keys(data)
+              .map((key) => ({ ...data[key], id: key }))
+              .find((u) => 
+                u.email === oauthUser.email || 
+                (u.oauthProviders && u.oauthProviders.includes(`${provider}:${oauthUser.providerId}`))
+              );
+
+            if (existingUser) {
+              // User exists, sign them in
+              set({
+                user: existingUser,
+                isAuthenticated: true,
+                pendingAuth: null,
+                pendingOtpExpiresAt: null,
+              });
+              return { ok: true, user: oauthUser };
+            }
+          }
+
+          // Create new user from OAuth data
+          const userId = Date.now().toString();
+          const newUser: User = {
+            email: oauthUser.email,
+            username: oauthUser.name || oauthUser.email.split('@')[0],
+            phone: '', // OAuth users might not have phone initially
+            type: 'passenger', // Default type
+            profileImage: oauthUser.picture,
+            oauthProviders: [`${provider}:${oauthUser.providerId}`],
+            createdAt: new Date().toISOString(),
+          };
+
+          await firebaseSet(ref(database, `users/${userId}`), newUser);
+          
+          set({
+            user: { ...newUser, id: userId },
+            isAuthenticated: true,
+            pendingAuth: null,
+            pendingOtpExpiresAt: null,
+          });
+
+          get().loadUsers();
+          return { ok: true, user: oauthUser };
+        } catch (error) {
+          console.error('OAuth sign-in error:', error);
+          return { ok: false, error: 'unknown' };
+        }
+      },
 
       requestSignInOtp: async (email) => {
         try {
