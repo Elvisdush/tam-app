@@ -15,7 +15,13 @@
     "server:prod": "NODE_ENV=production node backend/server.js",
     "cors:test": "node backend/test-cors.js",
     "cors:test:prod": "NODE_ENV=production node backend/test-cors.js",
-    "cors:test:dev": "NODE_ENV=development node backend/test-cors.js"
+    "cors:test:dev": "NODE_ENV=development node backend/test-cors.js",
+    "rate-limit:test": "node backend/test-rate-limit.js",
+    "rate-limit:test:prod": "NODE_ENV=production node backend/test-rate-limit.js",
+    "rate-limit:test:dev": "NODE_ENV=development node backend/test-rate-limit.js",
+    "security:test": "npm run cors:test && npm run rate-limit:test",
+    "security:test:prod": "npm run cors:test:prod && npm run rate-limit:test:prod",
+    "security:test:dev": "npm run cors:test:dev && npm run rate-limit:test:dev"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
