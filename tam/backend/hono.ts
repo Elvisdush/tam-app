@@ -5,6 +5,7 @@ import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
 import { createCorsMiddleware } from "./config/cors";
 import { rateLimit, createTrustedRateLimit, createUserBasedRateLimit, getRateLimitStats, resetRateLimit, resetAllRateLimits } from "./middleware/rate-limit";
+import { createDNSManager, createDNSMonitor, createDNSConfig } from "./config/dns-security";
 
 const app = new Hono();
 
@@ -97,7 +98,7 @@ app.get("/admin/rate-limit-stats", async (c) => {
   });
 });
 
-// Reset rate limit endpoint (admin only)
+// Rate limit reset endpoint (admin only)
 app.post("/admin/reset-rate-limit", async (c) => {
   // In production, add authentication check here
   const { key } = await c.req.json();
@@ -109,6 +110,55 @@ app.post("/admin/reset-rate-limit", async (c) => {
     resetAllRateLimits();
     return c.json({ success: true, message: 'All rate limits reset' });
   }
+});
+
+// DNS Security endpoints
+app.get("/admin/dns-security", async (c) => {
+  // In production, add authentication check here
+  const environment = (process.env.NODE_ENV || 'development') as 'production' | 'development';
+  const dnsManager = createDNSManager(environment);
+  
+  return c.json({
+    domain: dnsManager['config'].domain,
+    securityScore: dnsManager.getSecurityScore(),
+    recommendations: dnsManager.getSecurityRecommendations(),
+    deploymentChecklist: dnsManager.generateDeploymentChecklist(),
+    sslCertificates: dnsManager['config'].sslCertificates,
+    cdnConfiguration: dnsManager['config'].cdnConfiguration,
+    environment,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/admin/dns-health", async (c) => {
+  // In production, add authentication check here
+  const environment = (process.env.NODE_ENV || 'development') as 'production' | 'development';
+  const dnsConfig = createDNSConfig(environment);
+  const dnsMonitor = createDNSMonitor(dnsConfig.monitoring);
+  
+  const healthCheck = await dnsMonitor.checkDNSHealth();
+  const certificateCheck = await dnsMonitor.checkCertificateExpiry();
+  
+  return c.json({
+    dnsHealth: healthCheck,
+    certificateStatus: certificateCheck,
+    monitoring: dnsConfig.monitoring,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/admin/dns-records", async (c) => {
+  // In production, add authentication check here
+  const environment = (process.env.NODE_ENV || 'development') as 'production' | 'development';
+  const dnsManager = createDNSManager(environment);
+  
+  return c.json({
+    records: dnsManager.generateDNSRecords(),
+    domain: dnsManager['config'].domain,
+    subdomains: dnsManager['config'].subdomains,
+    environment,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.get("/", (c) => {

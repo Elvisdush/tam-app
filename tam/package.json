@@ -19,9 +19,13 @@
     "rate-limit:test": "node backend/test-rate-limit.js",
     "rate-limit:test:prod": "NODE_ENV=production node backend/test-rate-limit.js",
     "rate-limit:test:dev": "NODE_ENV=development node backend/test-rate-limit.js",
-    "security:test": "npm run cors:test && npm run rate-limit:test",
-    "security:test:prod": "npm run cors:test:prod && npm run rate-limit:test:prod",
-    "security:test:dev": "npm run cors:test:dev && npm run rate-limit:test:dev"
+    "dns:test": "node backend/test-dns-security.js",
+    "dns:test:prod": "NODE_ENV=production node backend/test-dns-security.js",
+    "dns:test:dev": "NODE_ENV=development node backend/test-dns-security.js",
+    "security:test": "npm run cors:test && npm run rate-limit:test && npm run dns:test",
+    "security:test:prod": "npm run cors:test:prod && npm run rate-limit:test:prod && npm run dns:test:prod",
+    "security:test:dev": "npm run cors:test:dev && npm run rate-limit:test:dev && npm run dns:test:dev",
+    "security:full": "npm run security:test && npm run server:dev"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
