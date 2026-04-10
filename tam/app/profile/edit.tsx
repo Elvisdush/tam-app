@@ -258,7 +258,10 @@ export default function EditProfileScreen() {
             </TouchableOpacity>
 
             {!isDriver && (
-              <TouchableOpacity style={styles.secondaryLink} onPress={() => router.push('/auth/register/driver')}>
+              <TouchableOpacity
+                style={styles.secondaryLink}
+                onPress={() => router.push('/auth/register?role=driver')}
+              >
                 <Text style={styles.secondaryLinkText}>Register as driver</Text>
               </TouchableOpacity>
             )}
