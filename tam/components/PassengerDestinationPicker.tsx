@@ -28,10 +28,9 @@ export function PassengerDestinationPicker({ transportType, selected, onSelect, 
   const baseList = useMemo(() => destinationsForTransport(transportType), [transportType]);
   const filtered = useMemo(() => filterDestinationsByQuery(baseList, query), [baseList, query]);
 
-  const motoHint =
-    transportType === 'motorbike'
-      ? 'Taxi moto: Kigali City only. Pick a district in Kigali.'
-      : 'Taxi car: any district or city in Rwanda.';
+  const modeHint = `${
+    transportType === 'motorbike' ? 'Taxi moto' : 'Taxi car'
+  }: any district or city in Rwanda.`;
 
   const isWaze = appearance === 'waze';
 
@@ -66,8 +65,8 @@ export function PassengerDestinationPicker({ transportType, selected, onSelect, 
           <ChevronDown color="#94a3b8" size={22} />
         )}
       </TouchableOpacity>
-      {!isWaze && <Text style={styles.hint}>{motoHint}</Text>}
-      {isWaze && <Text style={styles.hintWaze}>{motoHint}</Text>}
+      {!isWaze && <Text style={styles.hint}>{modeHint}</Text>}
+      {isWaze && <Text style={styles.hintWaze}>{modeHint}</Text>}
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
         <KeyboardAvoidingView
@@ -81,7 +80,7 @@ export function PassengerDestinationPicker({ transportType, selected, onSelect, 
                 <X color="#64748b" size={26} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.sheetSub}>{motoHint}</Text>
+            <Text style={styles.sheetSub}>{modeHint}</Text>
             <TextInput
               style={styles.search}
               placeholder="Search district or city…"

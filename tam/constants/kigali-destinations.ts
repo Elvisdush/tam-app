@@ -1,4 +1,4 @@
-/** District / city entries that count as Kigali City for passenger pricing & moto service area */
+/** District / city entries that count as Kigali City for passenger pricing */
 export const KIGALI_DESTINATION_IDS = new Set([
   'kigali-city',
   'gasabo',
@@ -10,10 +10,7 @@ export function isKigaliDestination(destinationId: string): boolean {
   return KIGALI_DESTINATION_IDS.has(destinationId);
 }
 
-/**
- * Approximate bounding box for Kigali City (taxi moto pickup zone).
- * Used with GPS so passengers outside this area cannot select taxi moto.
- */
+/** Approximate bounding box for Kigali City (e.g. map defaults, analytics). */
 const KIGALI_CITY_BBOX = {
   /** Southern edge (more negative latitude) */
   minLat: -2.06,
