@@ -28,12 +28,12 @@ import { useLocationStore } from '@/store/location-store';
 import NativeMapView from '@/components/NativeMapView';
 import { includeDemoNearbyDrivers } from '@/lib/demo-nearby-drivers';
 import type { RwandaDestination } from '@/constants/rwanda-destinations';
-import { isCoordinateInKigaliCity, isKigaliDestination } from '@/constants/kigali-destinations';
 import {
   minPriceRwfForDestination,
   MIN_PRICE_CAR_KIGALI_RWF,
   MIN_PRICE_CAR_OUTSIDE_KIGALI_RWF,
   MIN_PRICE_MOTO_KIGALI_RWF,
+  MIN_PRICE_MOTO_OUTSIDE_KIGALI_RWF,
 } from '@/lib/rwanda-passenger-pricing';
 import type { OnlineDriverMarker } from '@/types/online-driver';
 import { StarRatingRow } from '@/components/StarRatingRow';
@@ -194,77 +194,21 @@ export default function HomeScreen() {
       );
   }, [currentLocation?.latitude, currentLocation?.longitude, onlineDrivers, excludeViewer]);
 
-  /** Taxi moto: pickup must be inside Kigali (GPS). */
-  const passengerCanUseTaxiMoto = useMemo(() => {
-    if (!currentLocation) return false;
-    return isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude);
-  }, [currentLocation?.latitude, currentLocation?.longitude]);
-
-  /**
-   * Keep transport in sync: taxi moto is invalid without Kigali GPS — never leave motorbike selected.
-   * (Silent; alerts only when opening the trip sheet — see openTripDetails.)
-   */
-  useEffect(() => {
-    if (user?.type !== 'passenger') return;
-    if (transportType !== 'motorbike') return;
-    if (passengerCanUseTaxiMoto) return;
-    setTransportType('car');
-  }, [user?.type, transportType, passengerCanUseTaxiMoto]);
-
   const openTripDetails = () => {
-    if (user?.type === 'passenger' && transportType === 'motorbike' && !passengerCanUseTaxiMoto) {
-      setTransportType('car');
-      if (currentLocation && !isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
-        Alert.alert(
-          'Taxi moto only in Kigali',
-          'Taxi moto is only available when your pickup is inside Kigali City. We switched you to Taxi Car for this trip.'
-        );
-      } else if (!currentLocation) {
-        Alert.alert(
-          'Location needed for taxi moto',
-          'Turn on location to use taxi moto in Kigali. Using Taxi Car for this trip.'
-        );
-      }
-    }
     setShowTripDetails(true);
   };
 
   const trySelectTaxiMoto = () => {
-    if (!currentLocation) {
-      Alert.alert(
-        'Location required',
-        'Taxi moto is only available in Kigali City. Turn on location so we can check that your pickup is inside Kigali.'
-      );
-      return;
-    }
-    if (!isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
-      Alert.alert(
-        'Taxi moto only in Kigali',
-        'Taxi moto is only available when you are in Kigali City. Outside Kigali, use Taxi Car for your trip.'
-      );
-      return;
-    }
     setTransportType('motorbike');
     setShowTripDetails(true);
   };
-
-  /** Taxi moto is Kigali-only — clear an out-of-Kigali destination when switching to moto */
-  useEffect(() => {
-    if (user?.type !== 'passenger') return;
-    if (transportType !== 'motorbike') return;
-    if (selectedDestination && !isKigaliDestination(selectedDestination.id)) {
-      setSelectedDestination(null);
-      setTo('');
-      setPrice('');
-    }
-  }, [transportType, selectedDestination, user?.type]);
 
   const minFareRwf = useMemo(() => {
     if (user?.type !== 'passenger') return null;
     return minPriceRwfForDestination(transportType, selectedDestination?.id ?? null);
   }, [user?.type, transportType, selectedDestination?.id]);
 
-  /** Bump offer up if it falls below the new minimum (e.g. moto → car in Kigali) */
+  /** Bump offer up if it falls below the new minimum when transport or destination changes */
   useEffect(() => {
     if (user?.type !== 'passenger' || !selectedDestination) return;
     const m = minPriceRwfForDestination(transportType, selectedDestination.id);
@@ -283,29 +227,13 @@ export default function HomeScreen() {
         Alert.alert('From', 'Enter where you are leaving from.');
         return;
       }
-      if (transportType === 'motorbike') {
-        if (!currentLocation) {
-          Alert.alert(
-            'Location required',
-            'Taxi moto is only available in Kigali City. Turn on location so we can verify your pickup area.'
-          );
-          return;
-        }
-        if (!isCoordinateInKigaliCity(currentLocation.latitude, currentLocation.longitude)) {
-          Alert.alert(
-            'Taxi moto only in Kigali',
-            'Taxi moto is only available when your pickup is inside Kigali City. Switch to Taxi Car or move your pickup into Kigali.'
-          );
-          return;
-        }
-      }
       if (!selectedDestination) {
         Alert.alert('Destination', 'Choose a district or city in Rwanda.');
         return;
       }
       const min = minPriceRwfForDestination(transportType, selectedDestination.id);
       if (min == null) {
-        Alert.alert('Destination', 'Taxi moto is only available within Kigali City. Pick a Kigali destination.');
+        Alert.alert('Destination', 'Choose a district or city in Rwanda.');
         return;
       }
       const p = Number(price.replace(/\s/g, ''));
@@ -546,7 +474,6 @@ export default function HomeScreen() {
                       styles.rideTypeTile,
                       styles.rideTypeTileGap,
                       transportType === 'motorbike' && styles.rideTypeTileActive,
-                      !passengerCanUseTaxiMoto && styles.rideTypeTileMuted,
                     ]}
                     onPress={trySelectTaxiMoto}
                     activeOpacity={0.88}
@@ -555,26 +482,18 @@ export default function HomeScreen() {
                       style={[
                         styles.rideTypeIconWrap,
                         transportType === 'motorbike' && styles.rideTypeIconWrapActive,
-                        !passengerCanUseTaxiMoto && styles.rideTypeIconWrapMuted,
                       ]}
                     >
                       <Bike
                         size={26}
                         strokeWidth={2.4}
-                        color={
-                          transportType === 'motorbike' && passengerCanUseTaxiMoto
-                            ? '#ffffff'
-                            : passengerCanUseTaxiMoto
-                              ? '#ea580c'
-                              : '#94a3b8'
-                        }
+                        color={transportType === 'motorbike' ? '#ffffff' : '#ea580c'}
                       />
                     </View>
                     <Text
                       style={[
                         styles.rideTypeTileTitle,
                         transportType === 'motorbike' && styles.rideTypeTileTitleActive,
-                        !passengerCanUseTaxiMoto && styles.rideTypeTileTitleMuted,
                       ]}
                     >
                       Taxi Moto
@@ -582,18 +501,17 @@ export default function HomeScreen() {
                     <Text
                       style={[
                         styles.rideTypeTileHint,
-                        transportType === 'motorbike' && passengerCanUseTaxiMoto && styles.rideTypeTileHintActive,
-                        !passengerCanUseTaxiMoto && styles.rideTypeTileHintWarn,
+                        transportType === 'motorbike' && styles.rideTypeTileHintActive,
                       ]}
                       numberOfLines={1}
                     >
-                      {passengerCanUseTaxiMoto ? 'Kigali only' : 'Not available here'}
+                      Rwanda-wide
                     </Text>
                     {nearbyCounts != null && (
                       <View
                         style={[
                           styles.rideTypeBadge,
-                          transportType === 'motorbike' && passengerCanUseTaxiMoto
+                          transportType === 'motorbike'
                             ? styles.rideTypeBadgeOnActive
                             : styles.rideTypeBadgeMotoIdle,
                         ]}
@@ -601,7 +519,7 @@ export default function HomeScreen() {
                         <Text
                           style={[
                             styles.rideTypeBadgeText,
-                            transportType === 'motorbike' && passengerCanUseTaxiMoto
+                            transportType === 'motorbike'
                               ? styles.rideTypeBadgeTxtLight
                               : styles.rideTypeBadgeTxtMoto,
                           ]}
@@ -822,7 +740,7 @@ export default function HomeScreen() {
                 <Text style={styles.priceRules}>
                   {transportType === 'car'
                     ? `Taxi car: min ${MIN_PRICE_CAR_KIGALI_RWF.toLocaleString()} RWF in Kigali · min ${MIN_PRICE_CAR_OUTSIDE_KIGALI_RWF.toLocaleString()} RWF outside Kigali.`
-                    : `Taxi moto: Kigali only · min ${MIN_PRICE_MOTO_KIGALI_RWF.toLocaleString()} RWF.`}
+                    : `Taxi moto: min ${MIN_PRICE_MOTO_KIGALI_RWF.toLocaleString()} RWF in Kigali · min ${MIN_PRICE_MOTO_OUTSIDE_KIGALI_RWF.toLocaleString()} RWF outside Kigali.`}
                 </Text>
                 {minFareRwf != null && (
                   <Text style={styles.minFare}>Minimum for this trip: {minFareRwf.toLocaleString()} RWF</Text>
@@ -971,9 +889,14 @@ export default function HomeScreen() {
                   <View style={styles.driverDetailBlock}>
                     <Text style={styles.driverDetailBlockTitle}>Fare minimums (app rules)</Text>
                     {d.transportType === 'motorbike' ? (
-                      <Text style={styles.driverFareLine}>
-                        Kigali (taxi moto): from {MIN_PRICE_MOTO_KIGALI_RWF.toLocaleString()} RWF
-                      </Text>
+                      <>
+                        <Text style={styles.driverFareLine}>
+                          Kigali (taxi moto): from {MIN_PRICE_MOTO_KIGALI_RWF.toLocaleString()} RWF
+                        </Text>
+                        <Text style={styles.driverFareLine}>
+                          Outside Kigali (taxi moto): from {MIN_PRICE_MOTO_OUTSIDE_KIGALI_RWF.toLocaleString()} RWF
+                        </Text>
+                      </>
                     ) : (
                       <>
                         <Text style={styles.driverFareLine}>
