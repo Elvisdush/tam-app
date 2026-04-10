@@ -117,6 +117,12 @@ export default function EditProfileScreen() {
           </LinearGradient>
 
           <View style={styles.formWrap}>
+            {isDriver && user.driverNumber ? (
+              <View style={styles.driverIdBanner}>
+                <Text style={styles.driverIdLabel}>Driver number (sign in with this or email)</Text>
+                <Text style={styles.driverIdValue}>{user.driverNumber}</Text>
+              </View>
+            ) : null}
             <View style={styles.avatarRow}>
               <TouchableOpacity style={styles.photoTouch} onPress={() => pickImage('profile')} activeOpacity={0.85}>
                 {profileImage ? (
@@ -312,6 +318,29 @@ const styles = StyleSheet.create({
   formWrap: {
     marginTop: 8,
     paddingHorizontal: 20,
+  },
+  driverIdBanner: {
+    backgroundColor: '#ecfdf5',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  driverIdLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#047857',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  driverIdValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#065f46',
+    letterSpacing: 1,
   },
   avatarRow: {
     flexDirection: 'row',

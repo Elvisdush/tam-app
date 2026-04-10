@@ -157,7 +157,7 @@ export default function RegisterScreen() {
     setSubmitting(true);
     try {
       if (accountType === 'passenger') {
-        await register({
+        const result = await register({
           username: username.trim(),
           email: email.trim(),
           phone: phone.trim(),
@@ -165,8 +165,13 @@ export default function RegisterScreen() {
           profileImage: profileImage || '',
           type: 'passenger',
         });
+        if (!result.ok) {
+          Alert.alert('Could not create account', result.error);
+          return;
+        }
+        router.replace('/home');
       } else {
-        await register({
+        const result = await register({
           username: username.trim(),
           email: email.trim(),
           phone: phone.trim(),
@@ -178,8 +183,26 @@ export default function RegisterScreen() {
           vehiclePlate: vehiclePlate.trim(),
           vehicleModel: vehicleModel.trim(),
         });
+        if (!result.ok) {
+          Alert.alert('Could not create account', result.error);
+          return;
+        }
+        const driverNo =
+          result.driverNumber ?? useAuthStore.getState().user?.driverNumber;
+        if (driverNo) {
+          Alert.alert(
+            'Welcome, driver',
+            `Your driver number is ${driverNo}.\n\nSave it — use this number or your email to sign in. We’ll text you a one-time code.`,
+            [{ text: 'Continue', onPress: () => router.replace('/home') }]
+          );
+        } else {
+          Alert.alert(
+            'Account created',
+            'We could not confirm your driver number on this device. Check Profile after signing in, or contact support.',
+            [{ text: 'OK', onPress: () => router.replace('/home') }]
+          );
+        }
       }
-      router.replace('/home');
     } finally {
       setSubmitting(false);
     }
@@ -188,7 +211,7 @@ export default function RegisterScreen() {
   const subtitle =
     accountType === 'passenger'
       ? 'Add your details and optional photo. Drivers can recognize you. You’ll sign in with email and a one-time code.'
-      : 'Add your photos, account details, and vehicle info. Riders will see your taxi on the map.';
+      : 'Add your photos, account details, and vehicle info. You’ll get a unique driver number to sign in with (or use your email). Riders will see your taxi on the map.';
 
   const kicker = accountType === 'passenger' ? 'Passenger' : 'Driver';
 

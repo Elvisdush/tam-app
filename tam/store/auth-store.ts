@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ref, set as firebaseSet, get as firebaseGet, update as firebaseUpdate, onValue } from 'firebase/database';
+import {
+  ref,
+  set as firebaseSet,
+  get as firebaseGet,
+  update as firebaseUpdate,
+  onValue,
+  remove,
+} from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { User } from '@/types/user';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
@@ -15,14 +22,20 @@ import {
 import { sendSignInOtpSms } from '@/lib/otp-sms';
 import { maskPhoneForDisplay, normalizePhoneForSms } from '@/lib/phone';
 import { signInWithGoogle, signInWithApple, signOutOAuth, OAuthUser, OAuthProvider } from '@/lib/oauth';
+import { assignDriverNumberForNewUser, DRIVER_NUMBER_INDEX_PATH, normalizeDriverNumberInput } from '@/lib/driver-number';
 
 /** Firebase Realtime Database rejects `undefined` in update(); omit those keys. */
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
-export type SignInOtpResult = { ok: true; devOtpCode?: string } | { ok: false; error: string };
+export type SignInOtpResult =
+  | { ok: true; signInEmail: string; devOtpCode?: string }
+  | { ok: false; error: string };
 export type SignInOAuthResult = { ok: true; user: OAuthUser } | { ok: false; error: string };
+export type RegisterResult =
+  | { ok: true; driverNumber?: string }
+  | { ok: false; error: string };
 
 interface AuthState {
   user: User | null;
@@ -31,12 +44,12 @@ interface AuthState {
   /** Not persisted — until OTP is verified or cleared. */
   pendingAuth: { email: string; phoneMasked: string } | null;
   pendingOtpExpiresAt: number | null;
-  requestSignInOtp: (email: string) => Promise<SignInOtpResult>;
+  requestSignInOtp: (emailOrDriverNumber: string) => Promise<SignInOtpResult>;
   verifySignInOtp: (email: string, otp: string) => Promise<boolean>;
   resendSignInOtp: () => Promise<SignInOtpResult>;
   signInWithOAuth: (provider: OAuthProvider) => Promise<SignInOAuthResult>;
   clearPendingAuth: () => void;
-  register: (userData: Omit<User, 'id'>) => Promise<void>;
+  register: (userData: Omit<User, 'id'>) => Promise<RegisterResult>;
   updateUser: (userData: User) => Promise<boolean>;
   logout: () => void;
   loadUsers: () => void;
@@ -126,21 +139,62 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      requestSignInOtp: async (email) => {
+      requestSignInOtp: async (emailOrDriverNumber) => {
         try {
-          const trimmedEmail = email.trim();
+          const raw = emailOrDriverNumber.trim();
           const usersRef = ref(database, 'users');
-          const snapshot = await firebaseGet(usersRef);
 
-          if (!snapshot.exists()) {
-            return { ok: false, error: 'invalid_credentials' };
+          let user: (User & { id: string }) | undefined;
+
+          if (raw.includes('@')) {
+            const trimmedEmail = raw.toLowerCase();
+            const snapshot = await firebaseGet(usersRef);
+            if (!snapshot.exists()) {
+              return { ok: false, error: 'invalid_credentials' };
+            }
+            const data = snapshot.val() as Record<string, User & { password?: string }>;
+            user = Object.keys(data)
+              .map((key) => ({ ...data[key], id: key }))
+              .find((u) => u.email?.trim().toLowerCase() === trimmedEmail);
+          } else {
+            const driverNumber = normalizeDriverNumberInput(raw);
+            if (!driverNumber) {
+              return { ok: false, error: 'invalid_credentials' };
+            }
+            const idxSnap = await firebaseGet(ref(database, `${DRIVER_NUMBER_INDEX_PATH}/${driverNumber}`));
+            let userId: string | null = idxSnap.exists() ? String(idxSnap.val()) : null;
+            if (!userId) {
+              const snapAll = await firebaseGet(usersRef);
+              if (snapAll.exists()) {
+                const data = snapAll.val() as Record<string, User>;
+                const id = Object.keys(data).find(
+                  (key) =>
+                    data[key].type === 'driver' &&
+                    data[key].driverNumber?.trim().toUpperCase() === driverNumber
+                );
+                if (id) userId = id;
+              }
+            }
+            if (!userId) {
+              return { ok: false, error: 'invalid_credentials' };
+            }
+            const userSnap = await firebaseGet(ref(database, `users/${userId}`));
+            if (!userSnap.exists()) {
+              return { ok: false, error: 'invalid_credentials' };
+            }
+            const u = { ...userSnap.val(), id: userId } as User & { id: string };
+            if (u.type !== 'driver') {
+              return { ok: false, error: 'invalid_credentials' };
+            }
+            user = u;
           }
-          const data = snapshot.val() as Record<string, User & { password?: string }>;
-          const user = Object.keys(data)
-            .map((key) => ({ ...data[key], id: key }))
-            .find((u) => u.email === trimmedEmail);
 
           if (!user) {
+            return { ok: false, error: 'invalid_credentials' };
+          }
+
+          const trimmedEmail = user.email?.trim() ?? '';
+          if (!trimmedEmail) {
             return { ok: false, error: 'invalid_credentials' };
           }
 
@@ -158,24 +212,24 @@ export const useAuthStore = create<AuthState>()(
 
           const code = generateSixDigitCode();
           const expiresAt = Date.now() + OTP_TTL_MS;
-          await writeSignInOtp(trimmedEmail, { code, expiresAt, userId: user.id });
+          await writeSignInOtp(trimmedEmail.toLowerCase(), { code, expiresAt, userId: user.id });
 
           const sent = await sendSignInOtpSms(phoneE164, code);
           set({
-            pendingAuth: { email: trimmedEmail, phoneMasked },
+            pendingAuth: { email: trimmedEmail.toLowerCase(), phoneMasked },
             pendingOtpExpiresAt: expiresAt,
           });
 
           if (!sent) {
             if (__DEV__) {
-              return { ok: true, devOtpCode: code };
+              return { ok: true, signInEmail: trimmedEmail.toLowerCase(), devOtpCode: code };
             }
-            await deleteSignInOtp(trimmedEmail);
+            await deleteSignInOtp(trimmedEmail.toLowerCase());
             set({ pendingAuth: null, pendingOtpExpiresAt: null });
             return { ok: false, error: 'sms_not_configured' };
           }
 
-          return { ok: true };
+          return { ok: true, signInEmail: trimmedEmail.toLowerCase() };
         } catch (error) {
           console.error('Error requesting sign-in OTP:', error);
           return { ok: false, error: 'unknown' };
@@ -246,22 +300,34 @@ export const useAuthStore = create<AuthState>()(
       },
       
       register: async (userData) => {
+        const userId = Date.now().toString();
+        let driverNumber: string | undefined;
+        const newUser: Omit<User, 'id'> = { ...userData };
+
         try {
-          const userId = Date.now().toString();
-          const newUser = {
-            ...userData,
-          };
-          
-          await firebaseSet(ref(database, `users/${userId}`), newUser);
-          
+          if (userData.type === 'driver') {
+            driverNumber = await assignDriverNumberForNewUser(userId);
+            newUser.driverNumber = driverNumber;
+          }
+
+          const payload = omitUndefined(newUser as Record<string, unknown>);
+          await firebaseSet(ref(database, `users/${userId}`), payload);
+
           set({
-            user: { ...newUser, id: userId },
+            user: { ...newUser, id: userId } as User,
             isAuthenticated: true,
           });
-          
+
           get().loadUsers();
+          return { ok: true as const, driverNumber };
         } catch (error) {
           console.error('Error registering:', error);
+          if (driverNumber) {
+            await remove(ref(database, `${DRIVER_NUMBER_INDEX_PATH}/${driverNumber}`)).catch(() => {});
+          }
+          const message =
+            error instanceof Error ? error.message : 'Could not save your account. Check your connection.';
+          return { ok: false as const, error: message };
         }
       },
       
