@@ -114,6 +114,8 @@ const calculateDistanceHelper = (lat1: number, lon1: number, lat2: number, lon2:
 export interface LocationData {
   latitude: number;
   longitude: number;
+  /** GPS horizontal accuracy in meters (when provided by the OS) */
+  accuracyMeters?: number;
   /** Human-readable line (includes sector when available from reverse geocode) */
   address?: string;
   timestamp: string;
@@ -213,10 +215,12 @@ export const useLocationStore = create<LocationState>()(
               });
             });
             
+            const acc = position.coords.accuracy;
             const locationData: LocationData = {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              ...(typeof acc === 'number' && Number.isFinite(acc) ? { accuracyMeters: acc } : {}),
             };
             
             // Try to get address using reverse geocoding API
@@ -238,10 +242,12 @@ export const useLocationStore = create<LocationState>()(
               accuracy: Location.Accuracy.High,
             });
             
+            const acc = location.coords.accuracy;
             const locationData: LocationData = {
               latitude: location.coords.latitude,
               longitude: location.coords.longitude,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              ...(typeof acc === 'number' && Number.isFinite(acc) ? { accuracyMeters: acc } : {}),
             };
             
             const addr = await reverseGeocodeAddress(location.coords.latitude, location.coords.longitude);
@@ -284,10 +290,12 @@ export const useLocationStore = create<LocationState>()(
         if (Platform.OS === 'web') {
           const watchId = navigator.geolocation.watchPosition(
             async (position) => {
+              const acc = position.coords.accuracy;
               const locationData: LocationData = {
                 latitude: position.coords.latitude,
                 longitude: position.coords.longitude,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                ...(typeof acc === 'number' && Number.isFinite(acc) ? { accuracyMeters: acc } : {}),
               };
               
               // Try to get address using reverse geocoding API for web tracking
@@ -316,17 +324,38 @@ export const useLocationStore = create<LocationState>()(
           (get() as any).webWatchId = watchId;
         } else {
           try {
+            // One sharp fix so the map can zoom to the user immediately (watch may start slower).
+            try {
+              const snap = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Highest,
+              });
+              const sAcc = snap.coords.accuracy;
+              const snapData: LocationData = {
+                latitude: snap.coords.latitude,
+                longitude: snap.coords.longitude,
+                timestamp: new Date().toISOString(),
+                ...(typeof sAcc === 'number' && Number.isFinite(sAcc) ? { accuracyMeters: sAcc } : {}),
+              };
+              const addr = await reverseGeocodeAddress(snap.coords.latitude, snap.coords.longitude);
+              if (addr) snapData.address = addr;
+              set({ currentLocation: snapData });
+            } catch {
+              /* watch below will still populate */
+            }
+
             nativeLocationSubscription = await Location.watchPositionAsync(
               {
-                accuracy: Location.Accuracy.Balanced, // Changed from High to Balanced
-                timeInterval: 10000, // Increased from 5s to 10s
-                distanceInterval: 50, // Increased from 10m to 50m
+                accuracy: Location.Accuracy.Highest,
+                timeInterval: 2500,
+                distanceInterval: 5,
               },
               async (location) => {
+                const acc = location.coords.accuracy;
                 const locationData: LocationData = {
                   latitude: location.coords.latitude,
                   longitude: location.coords.longitude,
-                  timestamp: new Date().toISOString()
+                  timestamp: new Date().toISOString(),
+                  ...(typeof acc === 'number' && Number.isFinite(acc) ? { accuracyMeters: acc } : {}),
                 };
                 
                 const addr = await reverseGeocodeAddress(

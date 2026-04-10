@@ -1,6 +1,6 @@
 import React, { forwardRef } from 'react';
 import { StyleSheet, Platform, View, Text } from 'react-native';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import MapView, { Marker, Callout, Circle, type EdgePadding } from 'react-native-maps';
 import { Car, Bike } from 'lucide-react-native';
 import type { OnlineDriverMarker } from '@/types/online-driver';
 
@@ -9,6 +9,7 @@ interface Location {
   longitude: number;
   timestamp: string;
   address?: string;
+  accuracyMeters?: number;
 }
 
 export interface NativeMapViewProps {
@@ -19,15 +20,23 @@ export interface NativeMapViewProps {
   onDriverPress?: (driver: OnlineDriverMarker) => void;
   /** Shown on pickup bubble when > 0 (e.g. “3 nearby”) */
   userNearbyDriverCount?: number;
+  /** Keeps your pin in the visible area above bottom sheets / chrome */
+  mapPadding?: EdgePadding;
 }
 
 const DEFAULT_LAT = -1.9441;
 const DEFAULT_LNG = 30.0619;
 
 const NativeMapView = forwardRef<MapView, NativeMapViewProps>(function NativeMapView(
-  { currentLocation, nearbyDrivers = [], onDriverPress, userNearbyDriverCount = 0 },
+  { currentLocation, nearbyDrivers = [], onDriverPress, userNearbyDriverCount = 0, mapPadding },
   ref
 ) {
+  const acc = currentLocation?.accuracyMeters;
+  const circleRadius =
+    typeof acc === 'number' && Number.isFinite(acc) && acc > 0
+      ? Math.min(Math.max(acc, 10), 450)
+      : null;
+
   return (
     <View style={styles.mapWrap}>
       <MapView
@@ -40,6 +49,7 @@ const NativeMapView = forwardRef<MapView, NativeMapViewProps>(function NativeMap
         longitudeDelta: 0.045,
       }}
       {...(Platform.OS === 'web' && { googleMapsApiKey: 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U' })}
+      mapPadding={mapPadding}
       showsUserLocation={false}
       showsMyLocationButton={false}
       rotateEnabled
@@ -56,6 +66,18 @@ const NativeMapView = forwardRef<MapView, NativeMapViewProps>(function NativeMap
           : undefined
       }
     >
+      {currentLocation && circleRadius != null && (
+        <Circle
+          center={{
+            latitude: currentLocation.latitude,
+            longitude: currentLocation.longitude,
+          }}
+          radius={circleRadius}
+          fillColor="rgba(37, 99, 235, 0.14)"
+          strokeColor="rgba(29, 78, 216, 0.55)"
+          strokeWidth={1.5}
+        />
+      )}
       {currentLocation && (
         <Marker
           coordinate={{
