@@ -41,6 +41,27 @@ import { openPhoneDialer } from '@/lib/open-phone-dialer';
 
 const TAB_BAR_OFFSET = 52;
 
+/** Street-level zoom so your position is easy to see (~350 m span). */
+const HOME_MAP_LAT_DELTA = 0.0035;
+const HOME_MAP_LNG_DELTA = 0.0035;
+
+/**
+ * Map region focused on the user. Slight latitude shift keeps you in the visible band above the bottom sheet.
+ */
+function regionCenteredOnUser(
+  userLat: number,
+  userLng: number,
+  liftForBottomChrome: boolean
+) {
+  const lift = liftForBottomChrome ? HOME_MAP_LAT_DELTA * 0.22 : 0;
+  return {
+    latitude: userLat - lift,
+    longitude: userLng,
+    latitudeDelta: HOME_MAP_LAT_DELTA,
+    longitudeDelta: HOME_MAP_LNG_DELTA,
+  };
+}
+
 const PLACEHOLDER_AVATAR =
   'https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=1480&auto=format&fit=crop';
 
@@ -54,13 +75,14 @@ function pickupLineFromLocation(loc: {
 }): string {
   const addr = loc.address?.trim();
   if (addr) return addr;
-  return `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`;
+  return `${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}`;
 }
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
   const hasCenteredMapOnLoad = useRef(false);
+  const mapLiftModeRef = useRef<boolean | null>(null);
   const user = useAuthStore((state) => state.user);
   const users = useAuthStore((state) => state.users);
   const [from, setFrom] = useState('');
@@ -87,6 +109,24 @@ export default function HomeScreen() {
   const addRide = useRideStore((state) => state.addRide);
   const { currentLocation, startLocationTracking } = useLocationStore();
   const onlineDrivers = useOnlineDriversStore((state) => state.onlineDrivers);
+
+  const liftMapForChrome = user?.type === 'passenger' || user?.type === 'driver';
+
+  const homeMapPadding = useMemo(() => {
+    const h = Dimensions.get('window').height;
+    const bottom =
+      user?.type === 'passenger'
+        ? Math.min(340, Math.round(h * 0.36)) + insets.bottom
+        : user?.type === 'driver'
+          ? Math.min(400, Math.round(h * 0.48)) + insets.bottom
+          : 96 + insets.bottom;
+    return {
+      top: insets.top + 76,
+      right: 56,
+      bottom,
+      left: 12,
+    };
+  }, [user?.type, insets.top, insets.bottom]);
 
   useEffect(() => {
     startLocationTracking();
@@ -121,15 +161,24 @@ export default function HomeScreen() {
     if (!currentLocation || hasCenteredMapOnLoad.current) return;
     hasCenteredMapOnLoad.current = true;
     mapRef.current?.animateToRegion(
-      {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        latitudeDelta: 0.045,
-        longitudeDelta: 0.045,
-      },
-      500
+      regionCenteredOnUser(currentLocation.latitude, currentLocation.longitude, liftMapForChrome),
+      550
     );
-  }, [currentLocation?.latitude, currentLocation?.longitude]);
+  }, [currentLocation?.latitude, currentLocation?.longitude, liftMapForChrome]);
+
+  useEffect(() => {
+    if (!currentLocation) return;
+    if (mapLiftModeRef.current === null) {
+      mapLiftModeRef.current = liftMapForChrome;
+      return;
+    }
+    if (mapLiftModeRef.current === liftMapForChrome) return;
+    mapLiftModeRef.current = liftMapForChrome;
+    mapRef.current?.animateToRegion(
+      regionCenteredOnUser(currentLocation.latitude, currentLocation.longitude, liftMapForChrome),
+      400
+    );
+  }, [liftMapForChrome, currentLocation?.latitude, currentLocation?.longitude]);
 
   const recenterMapOnUser = () => {
     if (!currentLocation) {
@@ -137,12 +186,7 @@ export default function HomeScreen() {
       return;
     }
     mapRef.current?.animateToRegion(
-      {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        latitudeDelta: 0.035,
-        longitudeDelta: 0.035,
-      },
+      regionCenteredOnUser(currentLocation.latitude, currentLocation.longitude, liftMapForChrome),
       450
     );
   };
@@ -360,6 +404,7 @@ export default function HomeScreen() {
         nearbyDrivers={nearbyDrivers}
         userNearbyDriverCount={user?.type === 'passenger' ? nearbyDrivers.length : 0}
         onDriverPress={user?.type === 'passenger' ? handleOpenDriverDetails : undefined}
+        mapPadding={homeMapPadding}
       />
 
       <View style={styles.overlay} pointerEvents="box-none">
