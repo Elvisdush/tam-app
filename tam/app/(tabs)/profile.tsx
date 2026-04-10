@@ -29,6 +29,7 @@ import {
   Trash2,
   HelpCircle,
   FileText,
+  Hash,
 } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { StarRatingRow } from '@/components/StarRatingRow';
@@ -183,6 +184,17 @@ export default function ProfileScreen() {
               onPress={user.phone ? () => openTel(user.phone) : undefined}
               hint={user.phone ? 'Tap to call' : undefined}
             />
+            {isDriver && user.driverNumber ? (
+              <>
+                <View style={styles.cardDivider} />
+                <InfoRow
+                  icon={<Hash color={PRIMARY} size={20} strokeWidth={2.2} />}
+                  label="Driver number"
+                  value={user.driverNumber}
+                  hint="Use this or email to sign in"
+                />
+              </>
+            ) : null}
           </View>
 
           {isDriver ? (

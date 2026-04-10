@@ -14,7 +14,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ChevronLeft, Mail, Info } from 'lucide-react-native';
+import { ChevronLeft, Mail, Info, Hash } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth-store';
 import { BrandingLogo } from '@/components/branding/BrandingLogo';
@@ -23,8 +23,8 @@ import { AUTH } from '@/constants/auth-theme';
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
-  const [email, setEmail] = useState('');
-  const [emailError, setEmailError] = useState(false);
+  const [loginId, setLoginId] = useState('');
+  const [loginIdError, setLoginIdError] = useState(false);
   const requestSignInOtp = useAuthStore((state) => state.requestSignInOtp);
 
   const emailShake = useRef(new Animated.Value(0)).current;
@@ -39,18 +39,18 @@ export default function SignInScreen() {
   };
 
   const handleSignIn = async () => {
-    if (!email.trim()) {
-      setEmailError(true);
+    if (!loginId.trim()) {
+      setLoginIdError(true);
       shakeField(emailShake);
       return;
     }
 
-    const result = await requestSignInOtp(email);
+    const result = await requestSignInOtp(loginId);
     if (result.ok) {
       if (result.devOtpCode) {
         Alert.alert('Development', `SMS not configured. Your OTP is ${result.devOtpCode}`);
       }
-      router.push({ pathname: '/auth/otp-verify', params: { email: email.trim() } });
+      router.push({ pathname: '/auth/otp-verify', params: { email: result.signInEmail } });
     } else {
       if (result.error === 'sms_not_configured') {
         Alert.alert(
@@ -76,7 +76,13 @@ export default function SignInScreen() {
       if (result.error === 'unknown') {
         Alert.alert('Sign in failed', 'Please try again.');
       }
-      setEmailError(true);
+      if (result.error === 'invalid_credentials') {
+        Alert.alert(
+          'No account found',
+          'Check your email or driver number, then try again. New here? Create an account first.'
+        );
+      }
+      setLoginIdError(true);
       shakeField(emailShake);
     }
   };
@@ -124,33 +130,38 @@ export default function SignInScreen() {
           <Text style={styles.kicker}>Welcome back</Text>
           <Text style={styles.title}>Sign in</Text>
           <Text style={styles.subtitle}>
-            Enter your account email. We’ll text a one-time code to the phone number you used when you registered.
+            Passengers: enter your email. Drivers: enter your unique driver number (e.g. D100001) or your email. We’ll
+            text a one-time code to the phone on your account.
           </Text>
 
           <View style={styles.card}>
             <View style={styles.notice}>
               <Info color={AUTH.primary} size={20} strokeWidth={2} style={styles.noticeIcon} />
               <Text style={styles.noticeText}>
-                Enter the same email you used when you created your passenger account. We’ll send a one-time code by SMS
-                to the phone number on your profile—enter it on the next screen to sign in.
+                We match your email or driver ID to your profile, then send a 6-digit code by SMS to the phone number
+                you registered with.
               </Text>
             </View>
 
             <Animated.View style={{ transform: [{ translateX: emailShake }] }}>
-              <View style={[styles.fieldRow, emailError && styles.fieldRowError]}>
-                <Mail color={emailError ? AUTH.error : AUTH.muted} size={20} strokeWidth={2} />
+              <View style={[styles.fieldRow, loginIdError && styles.fieldRowError]}>
+                <View style={styles.fieldIcons}>
+                  <Mail color={loginIdError ? AUTH.error : AUTH.muted} size={18} strokeWidth={2} />
+                  <Hash color={loginIdError ? AUTH.error : AUTH.muted} size={18} strokeWidth={2} />
+                </View>
                 <TextInput
                   style={styles.input}
-                  placeholder="Email"
-                  placeholderTextColor={emailError ? AUTH.error : AUTH.muted}
-                  value={email}
+                  placeholder="Email or driver number"
+                  placeholderTextColor={loginIdError ? AUTH.error : AUTH.muted}
+                  value={loginId}
                   onChangeText={(text) => {
-                    setEmail(text);
-                    if (emailError) setEmailError(false);
+                    setLoginId(text);
+                    if (loginIdError) setLoginIdError(false);
                   }}
-                  keyboardType="email-address"
+                  keyboardType="default"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  autoComplete="username"
                 />
               </View>
             </Animated.View>
@@ -279,10 +290,17 @@ const styles = StyleSheet.create({
     color: AUTH.text,
     fontWeight: '500',
   },
+  fieldIcons: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    marginRight: 2,
+  },
   fieldRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     backgroundColor: '#f8fafc',
     borderRadius: 14,
     borderWidth: 1,
