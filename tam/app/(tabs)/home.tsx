@@ -24,6 +24,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { useRideStore } from '@/store/ride-store';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
 import { PassengerDestinationPicker } from '@/components/PassengerDestinationPicker';
+import { DriverRwandaSuggestList } from '@/components/DriverRwandaSuggestList';
 import { useLocationStore } from '@/store/location-store';
 import NativeMapView from '@/components/NativeMapView';
 import { includeDemoNearbyDrivers } from '@/lib/demo-nearby-drivers';
@@ -104,6 +105,31 @@ export default function HomeScreen() {
   const [showTripDetails, setShowTripDetails] = useState(false);
   /** Uber-style “Help drivers find you” card */
   const [showPickupHelpCard, setShowPickupHelpCard] = useState(true);
+  /** Driver sheet: which field shows Rwanda place suggestions */
+  const [driverSuggestField, setDriverSuggestField] = useState<'from' | 'to' | null>(null);
+  const driverSuggestBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearDriverSuggestTimer = () => {
+    if (driverSuggestBlurTimer.current) {
+      clearTimeout(driverSuggestBlurTimer.current);
+      driverSuggestBlurTimer.current = null;
+    }
+  };
+
+  const onDriverSearchFieldFocus = (field: 'from' | 'to') => {
+    clearDriverSuggestTimer();
+    setDriverSuggestField(field);
+  };
+
+  const onDriverSearchFieldBlur = () => {
+    clearDriverSuggestTimer();
+    driverSuggestBlurTimer.current = setTimeout(() => {
+      setDriverSuggestField(null);
+      driverSuggestBlurTimer.current = null;
+    }, 220);
+  };
+
+  useEffect(() => () => clearDriverSuggestTimer(), []);
 
   const searchRides = useRideStore((state) => state.searchRides);
   const addRide = useRideStore((state) => state.addRide);
@@ -690,13 +716,29 @@ export default function HomeScreen() {
                     You appear on the map for passengers when location is on.
                   </Text>
                 )}
+                <Text style={styles.driverSearchHint}>
+                  Search rides: type at least 2 letters in From or To for district and city suggestions.
+                </Text>
                 <TextInput
                   style={styles.input}
                   placeholder={fromIsManual ? 'From (e.g. your area)' : 'Current location (auto)'}
                   placeholderTextColor="#94a3b8"
                   value={from}
                   onChangeText={onFromChangeText}
+                  onFocus={() => onDriverSearchFieldFocus('from')}
+                  onBlur={onDriverSearchFieldBlur}
                 />
+                {driverSuggestField === 'from' ? (
+                  <DriverRwandaSuggestList
+                    query={from}
+                    onPick={(d) => {
+                      setFrom(d.name);
+                      setFromIsManual(true);
+                      clearDriverSuggestTimer();
+                      setDriverSuggestField(null);
+                    }}
+                  />
+                ) : null}
                 <View style={styles.pickupFromMeta}>
                   <Text style={styles.pickupAutoHint}>
                     {fromIsManual ? 'Custom pickup' : 'Filled from your GPS'}
@@ -711,7 +753,19 @@ export default function HomeScreen() {
                   placeholderTextColor="#94a3b8"
                   value={to}
                   onChangeText={setTo}
+                  onFocus={() => onDriverSearchFieldFocus('to')}
+                  onBlur={onDriverSearchFieldBlur}
                 />
+                {driverSuggestField === 'to' ? (
+                  <DriverRwandaSuggestList
+                    query={to}
+                    onPick={(d) => {
+                      setTo(d.name);
+                      clearDriverSuggestTimer();
+                      setDriverSuggestField(null);
+                    }}
+                  />
+                ) : null}
                 <TouchableOpacity style={styles.searchButton} onPress={handleSearch} activeOpacity={0.9}>
                   <Text style={styles.searchButtonText}>Search</Text>
                 </TouchableOpacity>
@@ -1546,6 +1600,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
     marginBottom: 12,
+  },
+  driverSearchHint: {
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 17,
+    marginBottom: 10,
   },
   priceRules: {
     fontSize: 11,
