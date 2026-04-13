@@ -71,14 +71,27 @@ function paramsEqual(a: LastSearchParams | null, b: LastSearchParams): boolean {
   );
 }
 
+/** Rides posted by passengers still waiting for a driver — for the driver “nearby” map */
+export type WaitingPassengerRideNearby = { ride: Ride; distanceKm: number };
+
 interface RideState {
   rides: Ride[];
   searchResults: Ride[];
   lastSearchParams: LastSearchParams | null;
   searchRides: (from: string, to: string, price?: number, transportType?: 'car' | 'motorbike') => void;
   getNearbyAvailableDrivers: (userLat: number, userLng: number, radiusKm?: number) => { moto: Ride[]; car: Ride[] };
+  /** Passengers waiting for pickup within radius (pending/scheduled, no driver assigned, has coordinates) */
+  getWaitingPassengerRidesNearLocation: (
+    driverLat: number,
+    driverLng: number,
+    radiusKm?: number
+  ) => WaitingPassengerRideNearby[];
   addRide: (ride: Omit<Ride, 'id'>) => Promise<string | null>;
-  acceptRide: (rideId: number | string) => Promise<void>;
+  /** Assigns current driver or passenger on accept; updates Firebase `status` + `driverId` / `passengerId` */
+  acceptRide: (
+    rideId: number | string,
+    assign: { driverId?: string; passengerId?: string }
+  ) => Promise<void>;
   loadRides: () => void;
   updateDriverLocation: (rideId: number, location: LiveLocation) => Promise<void>;
   updatePassengerLocation: (rideId: number, location: LiveLocation) => Promise<void>;
@@ -124,6 +137,47 @@ export const useRideStore = create<RideState>()(
         } else {
           set({ lastSearchParams: params, searchResults });
         }
+      },
+
+      getWaitingPassengerRidesNearLocation: (driverLat, driverLng, radiusKm = 15) => {
+        const rides = get().rides;
+        const R = 6371;
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+          const dLat = toRad(lat2 - lat1);
+          const dLon = toRad(lon2 - lon1);
+          const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        };
+
+        const now = Date.now();
+        const thirtyMinutes = 30 * 60 * 1000;
+        const out: WaitingPassengerRideNearby[] = [];
+
+        for (const ride of rides) {
+          if (ride.passengerId == null || ride.driverId != null) continue;
+          if (ride.status !== 'pending' && ride.status !== 'scheduled') continue;
+
+          let isExpired = now - new Date(ride.createdAt).getTime() > thirtyMinutes;
+          if (ride.status === 'scheduled' && ride.scheduledPickupAt) {
+            const pickup = new Date(ride.scheduledPickupAt).getTime();
+            isExpired = pickup < now - thirtyMinutes;
+          }
+          if (isExpired) continue;
+
+          const loc = ride.passengerLocation ?? ride.pickupLocation;
+          if (loc == null || typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number') continue;
+
+          const d = distanceKm(driverLat, driverLng, loc.latitude, loc.longitude);
+          if (d > radiusKm) continue;
+
+          out.push({ ride, distanceKm: d });
+        }
+
+        out.sort((a, b) => a.distanceKm - b.distanceKm);
+        return out;
       },
 
       getNearbyAvailableDrivers: (userLat, userLng, radiusKm = 15) => {
@@ -176,13 +230,18 @@ export const useRideStore = create<RideState>()(
         }
       },
       
-      acceptRide: async (rideId) => {
+      acceptRide: async (rideId, assign) => {
         try {
           const key = typeof rideId === 'string' ? rideId : String(rideId);
-          await firebaseUpdate(ref(database, `rides/${key}`), {
-            status: 'accepted'
-          });
-          
+          const updates: Record<string, unknown> = { status: 'accepted' };
+          if (assign.driverId != null && assign.driverId !== '') {
+            updates.driverId = assign.driverId;
+          }
+          if (assign.passengerId != null && assign.passengerId !== '') {
+            updates.passengerId = assign.passengerId;
+          }
+          await firebaseUpdate(ref(database, `rides/${key}`), updates);
+
           get().loadRides();
         } catch (error) {
           console.error('Error accepting ride:', error);

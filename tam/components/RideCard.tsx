@@ -33,7 +33,10 @@ export function RideCard({ ride }: RideCardProps) {
       {
         text: 'Confirm',
         onPress: () => {
-          acceptRide(ride.firebaseKey ?? ride.id);
+          if (!user?.id) return;
+          acceptRide(ride.firebaseKey ?? ride.id, {
+            ...(user.type === 'driver' ? { driverId: user.id } : { passengerId: user.id }),
+          });
           router.push({
             pathname: '/rides/track',
             params: { rideId: String(ride.firebaseKey ?? ride.id) },
