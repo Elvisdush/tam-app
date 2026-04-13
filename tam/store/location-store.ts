@@ -8,6 +8,7 @@ import {
   formatPlaceLineWithSectorFromBdc,
 } from '@/lib/reverse-geocode-net';
 import { fetchOsrmDrivingRoute } from '@/lib/osrm-route';
+import { getRoadHazardsForRouting } from '@/store/road-hazards-store';
 
 /** Native watch subscription — must be removed to avoid duplicate watches and permission errors */
 let nativeLocationSubscription: Location.LocationSubscription | null = null;
@@ -474,11 +475,13 @@ export const useLocationStore = create<LocationState>()(
         };
 
         const applyOsrmIfPossible = async (): Promise<RouteData | null> => {
+          const hazards = getRoadHazardsForRouting();
           const osrm = await fetchOsrmDrivingRoute(
             origin.latitude,
             origin.longitude,
             destination.latitude,
-            destination.longitude
+            destination.longitude,
+            hazards.length > 0 ? { hazardsToScore: hazards } : undefined
           );
           if (!osrm?.encodedPolyline) return null;
           return {

@@ -90,7 +90,50 @@ export type HazardOnRoute = {
   etaMinutes: number;
 };
 
-const CORRIDOR_BUFFER_M = 85;
+export const HAZARD_CORRIDOR_BUFFER_M = 85;
+
+/** Minimum cross-track distance from hazard center to any segment of the polyline (meters). */
+export function minDistanceHazardToPolylineMeters(
+  points: Array<{ latitude: number; longitude: number }>,
+  hazardLat: number,
+  hazardLng: number
+): number {
+  if (points.length < 2) return Infinity;
+  let minD = Infinity;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const { crossTrackM } = pointToSegmentMeters(
+      hazardLat,
+      hazardLng,
+      a.latitude,
+      a.longitude,
+      b.latitude,
+      b.longitude
+    );
+    if (crossTrackM < minD) minD = crossTrackM;
+  }
+  return minD;
+}
+
+/**
+ * Lower is better. Heavy penalty when the route enters a hazard corridor; used to pick OSRM alternatives.
+ */
+export function scorePolylineAgainstHazards(
+  points: Array<{ latitude: number; longitude: number }>,
+  hazards: RoadHazard[]
+): number {
+  if (points.length < 2 || hazards.length === 0) return 0;
+  let score = 0;
+  for (const h of hazards) {
+    const minD = minDistanceHazardToPolylineMeters(points, h.latitude, h.longitude);
+    const thresh = h.radiusM + HAZARD_CORRIDOR_BUFFER_M;
+    if (minD <= thresh) {
+      score += 50_000 + (thresh - minD) ** 2;
+    }
+  }
+  return score;
+}
 
 /**
  * Hazards whose zone intersects the route polyline ahead of the user.
@@ -119,7 +162,7 @@ export function findHazardsAheadOnRoute(
   const out: HazardOnRoute[] = [];
 
   for (const hazard of hazards) {
-    const threshold = hazard.radiusM + CORRIDOR_BUFFER_M;
+    const threshold = hazard.radiusM + HAZARD_CORRIDOR_BUFFER_M;
     let hitSegmentStart = -1;
     let metersIntoHit = 0;
 

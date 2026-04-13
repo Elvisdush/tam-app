@@ -7,8 +7,7 @@ import { trpc, trpcClient } from "@/lib/trpc";
 import { useAuthStore } from "@/store/auth-store";
 import { useChatStore } from "@/store/chat-store";
 import { useRideStore } from "@/store/ride-store";
-
-
+import { useRoadHazardsStore } from "@/store/road-hazards-store";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -20,6 +19,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     let cancelled = false;
+    const unsubHazards = useRoadHazardsStore.getState().subscribeRoadHazards();
 
     async function prepare() {
       loadUsers();
@@ -41,6 +41,7 @@ export default function RootLayout() {
     void prepare();
     return () => {
       cancelled = true;
+      unsubHazards();
     };
   }, [loadUsers, loadMessages, loadRides]);
 
