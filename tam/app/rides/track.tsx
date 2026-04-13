@@ -6,9 +6,92 @@ import { ChevronLeft, MessageSquare } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useRideStore } from '@/store/ride-store';
 import { useLocationStore } from '@/store/location-store';
+import type { RouteData } from '@/store/location-store';
 import { useAuthStore } from '@/store/auth-store';
 import RideTrackingMap from '@/components/RideTrackingMap';
 import { Ride, LiveLocation } from '@/types/ride';
+import { useNavigationPose } from '@/hooks/useNavigationPose';
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Active driving target: pickup first, then after ~85m from pickup assume passenger is aboard and route to dropoff.
+ */
+function getDriverNavDestination(
+  ride: Ride,
+  current: { latitude: number; longitude: number },
+  passengerPos: LiveLocation | null | undefined
+):
+  | {
+      dest: { latitude: number; longitude: number; timestamp: string; address?: string };
+      label: 'To pickup' | 'To dropoff' | 'To passenger';
+    }
+  | null {
+  const pickup = ride.pickupLocation;
+  const dropoff = ride.dropoffLocation;
+  const pass = passengerPos ?? ride.passengerLocation;
+
+  let toPickupKm: number | null = null;
+  if (pickup && 'latitude' in pickup) {
+    toPickupKm = haversineKm(current.latitude, current.longitude, pickup.latitude, pickup.longitude);
+  }
+
+  const nearPickup = toPickupKm != null && toPickupKm < 0.085;
+
+  if (nearPickup && dropoff && 'latitude' in dropoff) {
+    return {
+      dest: {
+        latitude: dropoff.latitude,
+        longitude: dropoff.longitude,
+        timestamp: '',
+        address: ride.to,
+      },
+      label: 'To dropoff',
+    };
+  }
+  if (pickup && 'latitude' in pickup) {
+    return {
+      dest: {
+        latitude: pickup.latitude,
+        longitude: pickup.longitude,
+        timestamp: '',
+        address: ride.from,
+      },
+      label: 'To pickup',
+    };
+  }
+  if (pass) {
+    return {
+      dest: {
+        latitude: pass.latitude,
+        longitude: pass.longitude,
+        timestamp: '',
+        address: pass.address,
+      },
+      label: 'To passenger',
+    };
+  }
+  if (dropoff && 'latitude' in dropoff) {
+    return {
+      dest: {
+        latitude: dropoff.latitude,
+        longitude: dropoff.longitude,
+        timestamp: '',
+        address: ride.to,
+      },
+      label: 'To dropoff',
+    };
+  }
+  return null;
+}
 
 export default function RideTrackScreen() {
   const params = useLocalSearchParams<{ rideId: string }>();
@@ -28,7 +111,17 @@ export default function RideTrackScreen() {
   const [ride, setRide] = useState<Ride | null>(null);
   const [routeToPickup, setRouteToPickup] = useState<{ distance: string; duration: string } | null>(null);
   const [routeToDropoff, setRouteToDropoff] = useState<{ distance: string; duration: string } | null>(null);
+  const [driverNavRoute, setDriverNavRoute] = useState<RouteData | null>(null);
+  const [driverRouteSummary, setDriverRouteSummary] = useState<{
+    distance: string;
+    duration: string;
+    label: string;
+  } | null>(null);
+  const [showDriverNavBanner, setShowDriverNavBanner] = useState(true);
   const locationUpdateInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const driverNavigationMode = Boolean(isDriver && driverNavRoute && currentLocation);
+  const { heading: navHeading } = useNavigationPose(driverNavigationMode);
 
   const firebaseKey = ride?.firebaseKey ?? rideId ?? String(ride?.id);
 
@@ -92,26 +185,69 @@ export default function RideTrackScreen() {
   }, [currentLocation, ride, firebaseKey, isDriver, updateDriverLocation, updatePassengerLocation]);
 
   useEffect(() => {
-    if (!ride || !currentLocation) return;
+    if (!currentLocation) return;
 
-    const driverPos = ride.driverLocation ?? (isDriver ? currentLocation : null);
-    const passengerPos = ride.passengerLocation ?? (!isDriver ? currentLocation : null);
-
-    const pickup = ride.pickupLocation ?? (isDriver ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude } : passengerPos);
-    const dropoff = ride.dropoffLocation ?? (isDriver ? passengerPos : { latitude: currentLocation.latitude, longitude: currentLocation.longitude });
-
-    if (isDriver && passengerPos) {
-      calculateRoute(
-        { ...currentLocation, timestamp: '' },
-        { latitude: passengerPos.latitude, longitude: passengerPos.longitude, timestamp: '' }
-      ).then((route) => route && setRouteToPickup({ distance: route.distance, duration: route.duration }));
-    } else if (!isDriver && driverPos) {
-      calculateRoute(
-        { ...currentLocation, timestamp: '' },
-        { latitude: driverPos.latitude, longitude: driverPos.longitude, timestamp: '' }
-      ).then((route) => route && setRouteToPickup({ distance: route.distance, duration: route.duration }));
+    if (!ride) {
+      setDriverNavRoute(null);
+      setDriverRouteSummary(null);
+      setRouteToPickup(null);
+      return;
     }
+
+    let cancelled = false;
+
+    const run = async () => {
+      if (isDriver) {
+        const passengerPos = ride.passengerLocation ?? null;
+        const target = getDriverNavDestination(ride, currentLocation, passengerPos);
+        if (!target) {
+          if (!cancelled) {
+            setDriverNavRoute(null);
+            setDriverRouteSummary(null);
+          }
+          return;
+        }
+        const route = await calculateRoute(
+          { ...currentLocation, timestamp: '' },
+          target.dest,
+          { persistToStore: false }
+        );
+        if (cancelled || !route) return;
+        setDriverNavRoute(route);
+        setDriverRouteSummary({
+          distance: route.distance,
+          duration: route.duration,
+          label: target.label,
+        });
+        setRouteToPickup(null);
+        setRouteToDropoff(null);
+      } else {
+        const driverPos = ride.driverLocation;
+        if (!driverPos) {
+          setRouteToPickup(null);
+          return;
+        }
+        const route = await calculateRoute(
+          { ...currentLocation, timestamp: '' },
+          { latitude: driverPos.latitude, longitude: driverPos.longitude, timestamp: '' },
+          { persistToStore: false }
+        );
+        if (cancelled || !route) return;
+        setRouteToPickup({ distance: route.distance, duration: route.duration });
+      }
+    };
+
+    void run();
+    const interval = setInterval(() => void run(), 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [ride, currentLocation, isDriver, calculateRoute]);
+
+  useEffect(() => {
+    setShowDriverNavBanner(true);
+  }, [driverRouteSummary?.label]);
 
   if (!ride && !rideId) {
     return (
@@ -147,8 +283,14 @@ export default function RideTrackScreen() {
           driverLocation={ride?.driverLocation ?? null}
           passengerLocation={ride?.passengerLocation ?? null}
           currentUserLocation={currentLocation}
-          routeToPickup={routeToPickup ?? undefined}
+          routeToPickup={!isDriver ? routeToPickup ?? undefined : undefined}
           routeToDropoff={routeToDropoff ?? undefined}
+          driverNavRoute={isDriver ? driverNavRoute : null}
+          driverNavigationMode={driverNavigationMode}
+          userHeading={navHeading}
+          driverRouteSummary={isDriver ? driverRouteSummary : null}
+          showDriverNavBanner={showDriverNavBanner}
+          onDismissDriverNavBanner={() => setShowDriverNavBanner(false)}
         />
       </View>
 

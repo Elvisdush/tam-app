@@ -9,7 +9,7 @@ import { decodePolyline } from '@/lib/navigation/polyline';
  * Waze-like driving puck: soft shadow, radial blue “ball,” thick white rim, forward wedge.
  * Map camera rotates with heading — marker stays unrotated so “up” is always forward.
  */
-function WazeStyleNavigationPuck() {
+export function WazeStyleNavigationPuck() {
   const size = 78;
   const c = size / 2;
   const r = 26;

@@ -157,7 +157,11 @@ interface LocationState {
   addSharedLocation: (sharedLocation: SharedLocation) => void;
   removeSharedLocation: (id: string) => void;
   updateCurrentLocation: (location: LocationData) => void;
-  calculateRoute: (origin: LocationData, destination: LocationData) => Promise<RouteData | null>;
+  calculateRoute: (
+    origin: LocationData,
+    destination: LocationData,
+    options?: { persistToStore?: boolean }
+  ) => Promise<RouteData | null>;
   clearRoute: () => void;
 }
 
@@ -426,8 +430,22 @@ export const useLocationStore = create<LocationState>()(
         set({ currentLocation: location });
       },
       
-      calculateRoute: async (origin: LocationData, destination: LocationData) => {
-        set({ isCalculatingRoute: true });
+      calculateRoute: async (
+        origin: LocationData,
+        destination: LocationData,
+        options?: { persistToStore?: boolean }
+      ) => {
+        const persistToStore = options?.persistToStore !== false;
+
+        const applyRouteToStore = (routeData: RouteData) => {
+          if (persistToStore) {
+            set({ currentRoute: routeData, isCalculatingRoute: false });
+          }
+        };
+
+        if (persistToStore) {
+          set({ isCalculatingRoute: true });
+        }
 
         const buildStraightLineFallback = (): RouteData => {
           const distanceKm = calculateDistanceHelper(
@@ -475,7 +493,7 @@ export const useLocationStore = create<LocationState>()(
           // Use OSRM first for better performance and reliability
           const osrm = await applyOsrmIfPossible();
           if (osrm) {
-            set({ currentRoute: osrm, isCalculatingRoute: false });
+            applyRouteToStore(osrm);
             return osrm;
           }
 
@@ -542,7 +560,7 @@ export const useLocationStore = create<LocationState>()(
             }
             const osrm = await applyOsrmIfPossible();
             const routeData = osrm ?? buildStraightLineFallback();
-            set({ currentRoute: routeData, isCalculatingRoute: false });
+            applyRouteToStore(routeData);
             return routeData;
           }
 
@@ -565,9 +583,12 @@ export const useLocationStore = create<LocationState>()(
                 const instr = step.navigationInstruction?.instructions;
                 const instructionText =
                   typeof instr === 'string' ? instr : (instr?.text ?? 'Continue');
+                const dm = Math.max(0, Number(step.distanceMeters) || 0);
+                const distanceLabel =
+                  dm < 1000 ? `${Math.round(dm)} m` : `${(dm / 1000).toFixed(1)} km`;
                 return {
                   instruction: instructionText,
-                  distance: `${((step.distanceMeters ?? 0) / 1000).toFixed(1)} km`,
+                  distance: distanceLabel,
                   duration: `${Math.ceil(parseInt(String(step.staticDuration ?? '0s').replace(/s$/i, ''), 10) / 60)} min`,
                 };
               }) ?? [];
@@ -579,7 +600,7 @@ export const useLocationStore = create<LocationState>()(
             if (!encoded) {
               const osrm = await applyOsrmIfPossible();
               const routeData = osrm ?? buildStraightLineFallback();
-              set({ currentRoute: routeData, isCalculatingRoute: false });
+              applyRouteToStore(routeData);
               return routeData;
             }
 
@@ -599,13 +620,13 @@ export const useLocationStore = create<LocationState>()(
                     ],
             };
 
-            set({ currentRoute: routeData, isCalculatingRoute: false });
+            applyRouteToStore(routeData);
             return routeData;
           }
 
           const fallbackOsrm = await applyOsrmIfPossible();
           const routeData = fallbackOsrm ?? buildStraightLineFallback();
-          set({ currentRoute: routeData, isCalculatingRoute: false });
+          applyRouteToStore(routeData);
           return routeData;
         } catch (error) {
           if (__DEV__) {
@@ -613,7 +634,7 @@ export const useLocationStore = create<LocationState>()(
           }
           const errorOsrm = await applyOsrmIfPossible();
           const routeData = errorOsrm ?? buildStraightLineFallback();
-          set({ currentRoute: routeData, isCalculatingRoute: false });
+          applyRouteToStore(routeData);
           return routeData;
         }
       },
