@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -11,6 +11,8 @@ import { useAuthStore } from '@/store/auth-store';
 import RideTrackingMap from '@/components/RideTrackingMap';
 import { Ride, LiveLocation } from '@/types/ride';
 import { useNavigationPose } from '@/hooks/useNavigationPose';
+import { useRouteHazardAlerts } from '@/hooks/useRouteHazardAlerts';
+import RouteHazardBanner from '@/components/navigation/RouteHazardBanner';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -124,6 +126,27 @@ export default function RideTrackScreen() {
   const { heading: navHeading } = useNavigationPose(driverNavigationMode);
 
   const firebaseKey = ride?.firebaseKey ?? rideId ?? String(ride?.id);
+
+  const routeHazardKey = useMemo(
+    () => `${driverNavRoute?.polyline?.slice(0, 120) ?? ''}_${firebaseKey}`,
+    [driverNavRoute?.polyline, firebaseKey]
+  );
+
+  const { hazardsAhead, banner: hazardBanner, dismissBanner: dismissHazardBanner, approachMinutes } =
+    useRouteHazardAlerts({
+      enabled: isDriver && driverNavigationMode,
+      polyline: driverNavRoute?.polyline,
+      userLat: currentLocation?.latitude ?? null,
+      userLng: currentLocation?.longitude ?? null,
+      routeDistanceLabel: driverNavRoute?.distance,
+      routeDurationLabel: driverNavRoute?.duration,
+      routeKey: routeHazardKey,
+    });
+
+  const routeHazardMarkers = useMemo(
+    () => (isDriver && driverNavigationMode ? hazardsAhead.map((h) => h.hazard) : []),
+    [isDriver, driverNavigationMode, hazardsAhead]
+  );
 
   useEffect(() => {
     startLocationTracking();
@@ -291,7 +314,16 @@ export default function RideTrackScreen() {
           driverRouteSummary={isDriver ? driverRouteSummary : null}
           showDriverNavBanner={showDriverNavBanner}
           onDismissDriverNavBanner={() => setShowDriverNavBanner(false)}
+          routeHazards={routeHazardMarkers}
         />
+        {isDriver && driverNavigationMode && hazardBanner && (
+          <RouteHazardBanner
+            state={hazardBanner}
+            approachMinutes={approachMinutes}
+            onDismiss={dismissHazardBanner}
+            topOffset={118}
+          />
+        )}
       </View>
 
       <View style={styles.footer}>
@@ -359,6 +391,7 @@ const styles = StyleSheet.create({
   },
   mapWrapper: {
     flex: 1,
+    position: 'relative',
   },
   footer: {
     padding: 16,

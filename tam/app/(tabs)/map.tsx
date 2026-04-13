@@ -8,6 +8,8 @@ import { useLocationStore } from '@/store/location-store';
 import { useAuthStore } from '@/store/auth-store';
 import NativeMapViewFull from '@/components/NativeMapViewFull';
 import NextManeuverBar from '@/components/navigation/NextManeuverBar';
+import RouteHazardBanner from '@/components/navigation/RouteHazardBanner';
+import { useRouteHazardAlerts } from '@/hooks/useRouteHazardAlerts';
 import { getNearbyTrafficLights } from '@/constants/traffic-light-locations';
 import { getNearbySpeedCameras } from '@/constants/speed-camera-locations';
 import { getNavigationGuidance } from '@/lib/navigation/guidance';
@@ -66,9 +68,37 @@ export default function MapScreen() {
       currentRoute.steps
     );
   }, [isNavigationMode, currentLocation, currentRoute]);
-  
+
   const sharedLat = latitude ? parseFloat(latitude as string) : null;
   const sharedLng = longitude ? parseFloat(longitude as string) : null;
+
+  const routeHazardKey = useMemo(
+    () =>
+      `${currentRoute?.polyline?.slice(0, 120) ?? ''}:${sharedLat ?? selectedDestination?.latitude}:${sharedLng ?? selectedDestination?.longitude}`,
+    [
+      currentRoute?.polyline,
+      sharedLat,
+      sharedLng,
+      selectedDestination?.latitude,
+      selectedDestination?.longitude,
+    ]
+  );
+
+  const { hazardsAhead, banner: hazardBanner, dismissBanner: dismissHazardBanner, approachMinutes } =
+    useRouteHazardAlerts({
+      enabled: isNavigationMode,
+      polyline: currentRoute?.polyline,
+      userLat: currentLocation?.latitude ?? null,
+      userLng: currentLocation?.longitude ?? null,
+      routeDistanceLabel: currentRoute?.distance,
+      routeDurationLabel: currentRoute?.duration,
+      routeKey: routeHazardKey,
+    });
+
+  const routeHazardMarkers = useMemo(
+    () => (isNavigationMode ? hazardsAhead.map((h) => h.hazard) : []),
+    [isNavigationMode, hazardsAhead]
+  );
 
   const ROAD_ALERT_RADIUS_KM = 10;
 
@@ -265,6 +295,7 @@ export default function MapScreen() {
             satelliteMode={isNavigationMode}
             trafficLights={nearbyTrafficLights}
             speedCameras={nearbySpeedCameras}
+            routeHazards={routeHazardMarkers}
           />
           </View>
         </TouchableWithoutFeedback>
@@ -370,6 +401,15 @@ export default function MapScreen() {
             instruction={navigationGuidance.nextInstruction}
             distanceLabel={navigationGuidance.distanceLabel}
             onExit={handleExitNavigation}
+          />
+        )}
+
+        {isNavigationMode && hazardBanner && (
+          <RouteHazardBanner
+            state={hazardBanner}
+            approachMinutes={approachMinutes}
+            onDismiss={dismissHazardBanner}
+            topOffset={Math.max(insets.top, 8) + 120}
           />
         )}
 

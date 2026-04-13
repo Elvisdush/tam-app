@@ -3,7 +3,9 @@ import { StyleSheet, View, Platform, Text } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Region, Details } from 'react-native-maps';
 import Svg, { Defs, RadialGradient, Stop, Circle, Path } from 'react-native-svg';
+import { AlertTriangle } from 'lucide-react-native';
 import { decodePolyline } from '@/lib/navigation/polyline';
+import type { RoadHazard } from '@/constants/road-hazards';
 
 /**
  * Waze-like driving puck: soft shadow, radial blue “ball,” thick white rim, forward wedge.
@@ -176,6 +178,8 @@ interface NativeMapViewFullProps {
   trafficLights?: TrafficLightMarker[];
   /** Speed / enforcement camera pins (approximate locations for awareness) */
   speedCameras?: SpeedCameraMarker[];
+  /** Accidents / weather / closures along the active route */
+  routeHazards?: RoadHazard[];
 }
 
 export default function NativeMapViewFull({
@@ -192,6 +196,7 @@ export default function NativeMapViewFull({
   onRouteUpdate,
   trafficLights = [],
   speedCameras = [],
+  routeHazards = [],
 }: NativeMapViewFullProps) {
   const mapRef = useRef<MapView>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Array<{ latitude: number; longitude: number }>>([]);
@@ -506,6 +511,21 @@ export default function NativeMapViewFull({
           <SpeedCameraMapIcon />
         </Marker>
       ))}
+      {routeHazards.map((h) => (
+        <Marker
+          key={h.id}
+          coordinate={{ latitude: h.latitude, longitude: h.longitude }}
+          title={`Hazard — ${h.title}`}
+          description={h.description}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
+          zIndex={5}
+        >
+          <View style={styles.roadHazardMarker}>
+            <AlertTriangle color="#fff" size={22} strokeWidth={2.5} />
+          </View>
+        </Marker>
+      ))}
     </MapView>
   );
 }
@@ -587,4 +607,19 @@ const styles = StyleSheet.create({
   trafficRed: { backgroundColor: '#ef4444' },
   trafficYellow: { backgroundColor: '#eab308' },
   trafficGreen: { backgroundColor: '#22c55e' },
+  roadHazardMarker: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#fef08a',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 6,
+  },
 });
