@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { getActiveRoadHazards } from '@/constants/road-hazards';
+import { useRoadHazardsStore } from '@/store/road-hazards-store';
 import {
   findHazardsAheadOnRoute,
   assumedSpeedFromRoute,
@@ -41,6 +41,8 @@ export function useRouteHazardAlerts(options: {
     routeKey = '',
   } = options;
 
+  const roadHazards = useRoadHazardsStore((s) => s.hazards);
+
   const [hazardsAhead, setHazardsAhead] = useState<HazardOnRoute[]>([]);
   const [banner, setBanner] = useState<RouteHazardBannerState | null>(null);
 
@@ -65,7 +67,7 @@ export function useRouteHazardAlerts(options: {
     }
 
     const speed = assumedSpeedFromRoute(routeDistanceLabel, routeDurationLabel, FALLBACK_SPEED_KMH);
-    const list = findHazardsAheadOnRoute(polyline, userLat, userLng, getActiveRoadHazards(), speed);
+    const list = findHazardsAheadOnRoute(polyline, userLat, userLng, roadHazards, speed);
     setHazardsAhead(list);
 
     if (list.length === 0) {
@@ -116,6 +118,7 @@ export function useRouteHazardAlerts(options: {
     routeDistanceLabel,
     routeDurationLabel,
     routeKey,
+    roadHazards,
   ]);
 
   return { hazardsAhead, banner, dismissBanner, approachMinutes: APPROACH_MINUTES };

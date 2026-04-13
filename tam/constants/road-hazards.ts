@@ -69,6 +69,7 @@ export const KIGALI_ROAD_HAZARDS: RoadHazard[] = [
   },
 ];
 
+/** Bundled demo hazards only — live data comes from Firebase via `useRoadHazardsStore` / `getRoadHazardsForRouting`. */
 export function getActiveRoadHazards(): RoadHazard[] {
   return KIGALI_ROAD_HAZARDS.filter((h) => h.active);
 }
