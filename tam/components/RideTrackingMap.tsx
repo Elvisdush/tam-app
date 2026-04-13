@@ -2,7 +2,8 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { StyleSheet, View, Text, Platform } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Region, Details } from 'react-native-maps';
-import { Car, User, MapPin } from 'lucide-react-native';
+import { Car, User, MapPin, AlertTriangle } from 'lucide-react-native';
+import type { RoadHazard } from '@/constants/road-hazards';
 import { Ride, LiveLocation } from '@/types/ride';
 import type { RouteData } from '@/store/location-store';
 import { decodePolyline } from '@/lib/navigation/polyline';
@@ -27,6 +28,8 @@ interface RideTrackingMapProps {
   /** Show the next-turn banner (driver can dismiss while keeping the route line) */
   showDriverNavBanner?: boolean;
   onDismissDriverNavBanner?: () => void;
+  /** Hazards along the active driver route (map pins) */
+  routeHazards?: RoadHazard[];
 }
 
 const KIGALI_CENTER = { latitude: -1.9441, longitude: 30.0619 };
@@ -72,6 +75,7 @@ export default function RideTrackingMap({
   userHeading = 0,
   showDriverNavBanner = false,
   onDismissDriverNavBanner,
+  routeHazards = [],
 }: RideTrackingMapProps) {
   const mapRef = useRef<MapView>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Array<{ latitude: number; longitude: number }>>([]);
@@ -391,6 +395,22 @@ export default function RideTrackingMap({
             strokeWidth={5}
           />
         )}
+        {driverNavigationMode &&
+          routeHazards.map((h) => (
+            <Marker
+              key={h.id}
+              coordinate={{ latitude: h.latitude, longitude: h.longitude }}
+              title={`Hazard — ${h.title}`}
+              description={h.description}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={5}
+            >
+              <View style={styles.roadHazardMarker}>
+                <AlertTriangle color="#fff" size={20} strokeWidth={2.5} />
+              </View>
+            </Marker>
+          ))}
       </MapView>
 
       {showDriverNavBanner &&
@@ -546,5 +566,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
+  },
+  roadHazardMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fef08a',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 6,
   },
 });
