@@ -6,11 +6,18 @@ interface NextManeuverBarProps {
   instruction: string;
   distanceLabel: string;
   onExit: () => void;
+  /** Distance from top of parent (e.g. map area under a screen header) */
+  topOffset?: number;
 }
 
-export default function NextManeuverBar({ instruction, distanceLabel, onExit }: NextManeuverBarProps) {
+export default function NextManeuverBar({
+  instruction,
+  distanceLabel,
+  onExit,
+  topOffset = 52,
+}: NextManeuverBarProps) {
   return (
-    <View style={styles.wrap} pointerEvents="box-none">
+    <View style={[styles.wrap, { top: topOffset }]} pointerEvents="box-none">
       <View style={styles.card}>
         <View style={styles.iconRow}>
           <Navigation color="#33ccff" size={28} />
@@ -34,7 +41,6 @@ export default function NextManeuverBar({ instruction, distanceLabel, onExit }: 
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    top: 52,
     left: 12,
     right: 12,
     flexDirection: 'row',
