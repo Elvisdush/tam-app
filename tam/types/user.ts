@@ -7,7 +7,7 @@ export interface User {
   profileImage?: string; // Made optional
   vehicleImage?: string;
   type: 'driver' | 'passenger';
-  /** Unique driver ID for sign-in (e.g. D100001) — set when drivers register */
+  /** Unique driver ID for sign-in (e.g. 2026-001 display, canonical stored as 2026001) */
   driverNumber?: string;
   /** OAuth providers linked to this account (e.g., ['google:123456', 'apple:789012']) */
   oauthProviders?: string[];

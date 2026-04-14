@@ -21,6 +21,7 @@ import { ChevronLeft, User, Mail, Phone, Lock, Camera, Car, Bike } from 'lucide-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '@/store/auth-store';
+import { formatDriverNumberForDisplay } from '@/lib/driver-number';
 import { BrandingLogo } from '@/components/branding/BrandingLogo';
 import { AUTH } from '@/constants/auth-theme';
 
@@ -190,9 +191,10 @@ export default function RegisterScreen() {
         const driverNo =
           result.driverNumber ?? useAuthStore.getState().user?.driverNumber;
         if (driverNo) {
+          const driverNoPretty = formatDriverNumberForDisplay(driverNo);
           Alert.alert(
             'Welcome, driver',
-            `Your driver number is ${driverNo}.\n\nSave it — use this number or your email to sign in. We’ll text you a one-time code.`,
+            `Your driver number is ${driverNoPretty}.\n\nSave it — use this number or your email to sign in. We’ll text you a one-time code.`,
             [{ text: 'Continue', onPress: () => router.replace('/home') }]
           );
         } else {
