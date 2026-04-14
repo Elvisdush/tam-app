@@ -19,6 +19,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '@/store/auth-store';
+import { formatDriverNumberForDisplay } from '@/lib/driver-number';
 
 export default function EditProfileScreen() {
   const user = useAuthStore((state) => state.user);
@@ -120,7 +121,7 @@ export default function EditProfileScreen() {
             {isDriver && user.driverNumber ? (
               <View style={styles.driverIdBanner}>
                 <Text style={styles.driverIdLabel}>Driver number (sign in with this or email)</Text>
-                <Text style={styles.driverIdValue}>{user.driverNumber}</Text>
+                <Text style={styles.driverIdValue}>{formatDriverNumberForDisplay(user.driverNumber)}</Text>
               </View>
             ) : null}
             <View style={styles.avatarRow}>

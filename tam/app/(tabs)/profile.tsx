@@ -34,6 +34,7 @@ import {
 import { useAuthStore } from '@/store/auth-store';
 import { StarRatingRow } from '@/components/StarRatingRow';
 import { openPhoneDialer } from '@/lib/open-phone-dialer';
+import { formatDriverNumberForDisplay } from '@/lib/driver-number';
 
 const PRIMARY = '#3498db';
 const PLACEHOLDER_AVATAR =
@@ -190,7 +191,7 @@ export default function ProfileScreen() {
                 <InfoRow
                   icon={<Hash color={PRIMARY} size={20} strokeWidth={2.2} />}
                   label="Driver number"
-                  value={user.driverNumber}
+                  value={formatDriverNumberForDisplay(user.driverNumber)}
                   hint="Use this or email to sign in"
                 />
               </>

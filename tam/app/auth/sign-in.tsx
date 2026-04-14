@@ -130,7 +130,7 @@ export default function SignInScreen() {
           <Text style={styles.kicker}>Welcome back</Text>
           <Text style={styles.title}>Sign in</Text>
           <Text style={styles.subtitle}>
-            Passengers: enter your email. Drivers: enter your unique driver number (e.g. D100001) or your email. We’ll
+            Passengers: enter your email. Drivers: enter your unique driver number (e.g. 2026-001) or your email. We’ll
             text a one-time code to the phone on your account.
           </Text>
 
