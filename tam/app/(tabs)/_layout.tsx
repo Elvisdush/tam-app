@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
-import { Home, MapPin, MessageSquare, User } from 'lucide-react-native';
+import { Home, MapPin, MessageSquare, User, CirclePlus } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { useChatStore } from '@/store/chat-store';
 
@@ -46,6 +46,14 @@ export default function TabLayout() {
         options={{
           title: 'Map',
           tabBarIcon: ({ color, size }) => <MapPin size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="post-ride"
+        options={{
+          title: 'Post Ride',
+          href: user?.type === 'driver' ? '/post-ride' : null,
+          tabBarIcon: ({ color, size }) => <CirclePlus size={size} color={color} />,
         }}
       />
       <Tabs.Screen
