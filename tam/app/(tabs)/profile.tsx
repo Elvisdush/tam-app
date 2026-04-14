@@ -199,6 +199,22 @@ export default function ProfileScreen() {
 
           {isDriver ? (
             <>
+              <Text style={styles.sectionHeading}>Driver rating</Text>
+              <View style={styles.card}>
+                <View style={styles.ratingDetailBlock}>
+                  <StarRatingRow
+                    value={hasRating ? user.averageRating : undefined}
+                    ratingCount={hasRating ? user.ratingCount : undefined}
+                    size={18}
+                    showEmpty
+                    emptyLabel="No ratings yet"
+                  />
+                  <Text style={styles.ratingDetailHint}>
+                    Ratings come from completed rides with passenger feedback.
+                  </Text>
+                </View>
+              </View>
+
               <Text style={styles.sectionHeading}>Vehicle</Text>
               <View style={styles.card}>
                 <InfoRow
@@ -471,6 +487,16 @@ const styles = StyleSheet.create({
   },
   bioBlock: {
     padding: 16,
+  },
+  ratingDetailBlock: {
+    padding: 16,
+  },
+  ratingDetailHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#64748b',
+    lineHeight: 18,
+    fontWeight: '500',
   },
   bioText: {
     fontSize: 15,

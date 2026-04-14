@@ -2,26 +2,46 @@ import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform } from 'react-native';
 import { MapPin } from 'lucide-react-native';
 import { RWANDA_DESTINATIONS } from '@/constants/rwanda-destinations';
-import type { RwandaDestination } from '@/constants/rwanda-destinations';
-import { filterDestinationsByQuery } from '@/lib/rwanda-passenger-pricing';
+import { RWANDA_SEARCH_PLACES } from '@/constants/rwanda-search-places';
 
 const MAX_ITEMS = 8;
 const MIN_QUERY_LEN = 2;
 
+type DriverSuggestion = {
+  id: string;
+  name: string;
+  subtitle: string;
+  search: string;
+};
+
 type Props = {
   query: string;
-  onPick: (d: RwandaDestination) => void;
+  onPick: (d: DriverSuggestion) => void;
 };
 
 /**
- * Compact Rwanda district / city suggestions for driver ride search (From / To).
+ * Compact Rwanda place suggestions (districts, sectors, streets) for driver search.
  */
 export function DriverRwandaSuggestList({ query, onPick }: Props) {
+  const allPlaces = useMemo<DriverSuggestion[]>(
+    () => [...RWANDA_DESTINATIONS, ...RWANDA_SEARCH_PLACES],
+    []
+  );
+
   const items = useMemo(() => {
     const q = query.trim();
     if (q.length < MIN_QUERY_LEN) return [];
-    return filterDestinationsByQuery(RWANDA_DESTINATIONS, q).slice(0, MAX_ITEMS);
-  }, [query]);
+    const normalizedQ = q.toLowerCase();
+    const compactQ = normalizedQ.replace(/[^a-z0-9]/g, '');
+    return allPlaces
+      .filter((d) => {
+        const hayRaw = `${d.name} ${d.subtitle} ${d.search}`.toLowerCase();
+        const hay = hayRaw.replace(/[^a-z0-9]/g, ' ');
+        const compactHay = hay.replace(/\s+/g, '');
+        return hay.includes(normalizedQ) || compactHay.includes(compactQ);
+      })
+      .slice(0, MAX_ITEMS);
+  }, [query, allPlaces]);
 
   if (items.length === 0) return null;
 
