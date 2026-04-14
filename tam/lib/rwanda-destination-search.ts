@@ -1,4 +1,5 @@
 import { RWANDA_DESTINATIONS, type RwandaDestination } from '@/constants/rwanda-destinations';
+import { RWANDA_SEARCH_PLACES } from '@/constants/rwanda-search-places';
 import type { LocationSuggestion } from '@/lib/places-search';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -15,13 +16,26 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * c;
 }
 
-function matchesQuery(dest: RwandaDestination, q: string): boolean {
-  const hay = `${dest.name} ${dest.subtitle} ${dest.search}`.toLowerCase();
-  return hay.includes(q);
+type SearchLocation = Pick<RwandaDestination, 'id' | 'name' | 'subtitle' | 'latitude' | 'longitude' | 'search'>;
+
+function normalizeForSearch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function matchesQuery(dest: SearchLocation, q: string): boolean {
+  const hayRaw = `${dest.name} ${dest.subtitle} ${dest.search}`.toLowerCase();
+  const hay = normalizeForSearch(hayRaw);
+  const normalizedQ = normalizeForSearch(q);
+  const compactQ = normalizedQ.replace(/\s+/g, '');
+  const compactHay = hay.replace(/\s+/g, '');
+  return hay.includes(normalizedQ) || compactHay.includes(compactQ);
 }
 
 function toSuggestion(
-  dest: RwandaDestination,
+  dest: SearchLocation,
   userLat: number | null | undefined,
   userLng: number | null | undefined
 ): LocationSuggestion {
@@ -54,7 +68,8 @@ export function buildRwandaSuggestions(
   userLng: number | null | undefined
 ): LocationSuggestion[] {
   const q = query.trim().toLowerCase();
-  let list = q ? RWANDA_DESTINATIONS.filter((d) => matchesQuery(d, q)) : [...RWANDA_DESTINATIONS];
+  const allPlaces: SearchLocation[] = [...RWANDA_DESTINATIONS, ...RWANDA_SEARCH_PLACES];
+  let list = q ? allPlaces.filter((d) => matchesQuery(d, q)) : [...allPlaces];
 
   if (userLat != null && userLng != null) {
     list = [...list].sort((a, b) => {

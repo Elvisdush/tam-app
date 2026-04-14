@@ -416,7 +416,7 @@ export default function MapScreen() {
         {isFocused && !isNavigationMode && (
           <View style={[styles.wazeSuggestionsPanel, { top: suggestionsTop }]} pointerEvents="box-none">
             <View style={styles.suggestionsHeader}>
-              <Text style={styles.suggestionsHeaderTitle}>Rwanda destinations</Text>
+              <Text style={styles.suggestionsHeaderTitle}>Rwanda places, sectors & streets</Text>
               <TouchableOpacity onPress={dismissSearchOverlay} style={styles.suggestionsCloseBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <X color="#64748b" size={22} />
               </TouchableOpacity>
