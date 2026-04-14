@@ -275,13 +275,23 @@ export default function HomeScreen() {
 
   const minFareRwf = useMemo(() => {
     if (user?.type !== 'passenger') return null;
-    return minPriceRwfForDestination(transportType, selectedDestination?.id ?? null);
+    return minPriceRwfForDestination(
+      transportType,
+      selectedDestination?.id ?? null,
+      selectedDestination
+        ? { latitude: selectedDestination.latitude, longitude: selectedDestination.longitude }
+        : null
+    );
   }, [user?.type, transportType, selectedDestination?.id]);
 
   /** Bump offer up if it falls below the new minimum when transport or destination changes */
   useEffect(() => {
     if (user?.type !== 'passenger' || !selectedDestination) return;
-    const m = minPriceRwfForDestination(transportType, selectedDestination.id);
+    const m = minPriceRwfForDestination(
+      transportType,
+      selectedDestination.id,
+      { latitude: selectedDestination.latitude, longitude: selectedDestination.longitude }
+    );
     if (m == null) return;
     const p = Number(price.replace(/\s/g, ''));
     if (Number.isNaN(p) || p < m) setPrice(String(m));
@@ -298,12 +308,16 @@ export default function HomeScreen() {
         return;
       }
       if (!selectedDestination) {
-        Alert.alert('Destination', 'Choose a district or city in Rwanda.');
+        Alert.alert('Destination', 'Choose a district, sector, or street in Rwanda.');
         return;
       }
-      const min = minPriceRwfForDestination(transportType, selectedDestination.id);
+      const min = minPriceRwfForDestination(
+        transportType,
+        selectedDestination.id,
+        { latitude: selectedDestination.latitude, longitude: selectedDestination.longitude }
+      );
       if (min == null) {
-        Alert.alert('Destination', 'Choose a district or city in Rwanda.');
+        Alert.alert('Destination', 'Choose a district, sector, or street in Rwanda.');
         return;
       }
       const p = Number(price.replace(/\s/g, ''));
@@ -409,7 +423,11 @@ export default function HomeScreen() {
       : NaN;
   const minForOffer =
     user?.type === 'passenger' && selectedDestination
-      ? minPriceRwfForDestination(transportType, selectedDestination.id)
+      ? minPriceRwfForDestination(
+          transportType,
+          selectedDestination.id,
+          { latitude: selectedDestination.latitude, longitude: selectedDestination.longitude }
+        )
       : null;
 
   const bottomSafe = insets.bottom + TAB_BAR_OFFSET;
@@ -717,7 +735,7 @@ export default function HomeScreen() {
                   </Text>
                 )}
                 <Text style={styles.driverSearchHint}>
-                  Search rides: type at least 2 letters in From or To for district and city suggestions.
+                  Search rides: type at least 2 letters in From or To for district, sector, and street suggestions.
                 </Text>
                 <TextInput
                   style={styles.input}
@@ -884,7 +902,11 @@ export default function HomeScreen() {
                   : PLACEHOLDER_AVATAR;
               const tripMinForDriver =
                 selectedDestination && d.transportType === transportType
-                  ? minPriceRwfForDestination(transportType, selectedDestination.id)
+                  ? minPriceRwfForDestination(
+                      transportType,
+                      selectedDestination.id,
+                      { latitude: selectedDestination.latitude, longitude: selectedDestination.longitude }
+                    )
                   : null;
               const typeMismatch = d.transportType !== transportType;
 

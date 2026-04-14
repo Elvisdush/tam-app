@@ -1,5 +1,6 @@
 import { RWANDA_DESTINATIONS, type RwandaDestination } from '@/constants/rwanda-destinations';
-import { isKigaliDestination } from '@/constants/kigali-destinations';
+import { RWANDA_SEARCH_PLACES } from '@/constants/rwanda-search-places';
+import { isCoordinateInKigaliCity, isKigaliDestination } from '@/constants/kigali-destinations';
 
 /** Taxi car — Kigali City area */
 export const MIN_PRICE_CAR_KIGALI_RWF = 6_000;
@@ -14,20 +15,26 @@ export function destinationsForTransport(
   _transportType: 'car' | 'motorbike',
   all: RwandaDestination[] = RWANDA_DESTINATIONS
 ): RwandaDestination[] {
-  return [...all];
+  // Passenger picker now supports districts + sectors + streets.
+  return [...all, ...(RWANDA_SEARCH_PLACES as unknown as RwandaDestination[])];
 }
 
 export function minPriceRwfForDestination(
   transportType: 'car' | 'motorbike',
-  destinationId: string | null | undefined
+  destinationId: string | null | undefined,
+  destinationCoords?: { latitude: number; longitude: number } | null
 ): number | null {
   if (!destinationId) return null;
+  const isKigali =
+    isKigaliDestination(destinationId) ||
+    (destinationCoords != null &&
+      isCoordinateInKigaliCity(destinationCoords.latitude, destinationCoords.longitude));
   if (transportType === 'motorbike') {
-    return isKigaliDestination(destinationId)
+    return isKigali
       ? MIN_PRICE_MOTO_KIGALI_RWF
       : MIN_PRICE_MOTO_OUTSIDE_KIGALI_RWF;
   }
-  return isKigaliDestination(destinationId)
+  return isKigali
     ? MIN_PRICE_CAR_KIGALI_RWF
     : MIN_PRICE_CAR_OUTSIDE_KIGALI_RWF;
 }

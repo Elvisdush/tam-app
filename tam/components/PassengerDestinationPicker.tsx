@@ -30,7 +30,7 @@ export function PassengerDestinationPicker({ transportType, selected, onSelect, 
 
   const modeHint = `${
     transportType === 'motorbike' ? 'Taxi moto' : 'Taxi car'
-  }: any district or city in Rwanda.`;
+  }: any district, sector, or street in Rwanda.`;
 
   const isWaze = appearance === 'waze';
 
@@ -56,7 +56,7 @@ export function PassengerDestinationPicker({ transportType, selected, onSelect, 
             style={selected ? styles.fieldValue : isWaze ? styles.fieldPlaceholderWaze : styles.fieldPlaceholder}
             numberOfLines={isWaze ? 1 : 2}
           >
-            {selected ? `${selected.name} · ${selected.subtitle}` : isWaze ? 'Where to?' : 'Tap to choose district / city'}
+            {selected ? `${selected.name} · ${selected.subtitle}` : isWaze ? 'Where to?' : 'Tap to choose district, sector, or street'}
           </Text>
         </View>
         {isWaze ? (
@@ -83,7 +83,7 @@ export function PassengerDestinationPicker({ transportType, selected, onSelect, 
             <Text style={styles.sheetSub}>{modeHint}</Text>
             <TextInput
               style={styles.search}
-              placeholder="Search district or city…"
+              placeholder="Search district, sector, or street…"
               placeholderTextColor="#999"
               value={query}
               onChangeText={setQuery}
