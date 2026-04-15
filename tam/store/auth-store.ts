@@ -113,6 +113,7 @@ export const useAuthStore = create<AuthState>()(
           // Create new user from OAuth data
           const userId = Date.now().toString();
           const newUser: User = {
+            id: userId,
             email: oauthUser.email,
             username: oauthUser.name || oauthUser.email.split('@')[0],
             phone: '', // OAuth users might not have phone initially
@@ -122,7 +123,8 @@ export const useAuthStore = create<AuthState>()(
             createdAt: new Date().toISOString(),
           };
 
-          await firebaseSet(ref(database, `users/${userId}`), newUser);
+          const { id: _id, ...userPayload } = newUser;
+          await firebaseSet(ref(database, `users/${userId}`), userPayload);
           
           set({
             user: { ...newUser, id: userId },

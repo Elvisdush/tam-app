@@ -15,7 +15,9 @@ export interface CorsConfig {
 // Development CORS Configuration
 export const developmentCors: CorsConfig = {
   origins: [
-    // Local development servers
+    // Local development servers (any port — Expo web often uses 8081, 8082, …)
+    'http://localhost:*',
+    'http://127.0.0.1:*',
     'http://localhost:3000',
     'http://localhost:8081',
     'http://localhost:19006',

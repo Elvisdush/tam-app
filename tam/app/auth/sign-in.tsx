@@ -55,7 +55,9 @@ export default function SignInScreen() {
       if (result.error === 'sms_not_configured') {
         Alert.alert(
           'SMS not available',
-          'Add Twilio to .env: EXPO_PUBLIC_TWILIO_ACCOUNT_SID, EXPO_PUBLIC_TWILIO_AUTH_TOKEN, EXPO_PUBLIC_TWILIO_FROM, then restart Expo.'
+          Platform.OS === 'web'
+            ? 'On web, SMS is sent through this app’s API server (Twilio blocks the browser). Set EXPO_PUBLIC_API_BASE_URL to your API (e.g. http://localhost:3000), run npm run server in another terminal, then restart Expo. Twilio keys must be available to that server (TWILIO_* or EXPO_PUBLIC_TWILIO_* in .env).'
+            : 'Add Twilio to .env: EXPO_PUBLIC_TWILIO_ACCOUNT_SID, EXPO_PUBLIC_TWILIO_AUTH_TOKEN, EXPO_PUBLIC_TWILIO_FROM, then restart Expo.'
         );
         return;
       }

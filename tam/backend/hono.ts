@@ -6,6 +6,7 @@ import { createContext } from "./trpc/create-context";
 import { createCorsMiddleware } from "./config/cors";
 import { rateLimit, createTrustedRateLimit, createUserBasedRateLimit, getRateLimitStats, resetRateLimit, resetAllRateLimits } from "./middleware/rate-limit";
 import { createDNSManager, createDNSMonitor, createDNSConfig } from "./config/dns-security";
+import { sendSignInOtpViaTwilioServer } from "./twilio-otp";
 
 const app = new Hono();
 
@@ -58,6 +59,40 @@ app.use("/api/auth/*", rateLimit.auth);
 app.use("/api/sign-in*", rateLimit.auth);
 app.use("/api/sign-up*", rateLimit.auth);
 app.use("/api/otp*", rateLimit.otp);
+
+/**
+ * Web sign-in OTP: browsers cannot call Twilio directly (CORS). The app POSTs here instead.
+ * Set EXPO_PUBLIC_API_BASE_URL (e.g. http://localhost:3000) in the Expo app .env when using web.
+ * Optional: OTP_PROXY_SECRET on server + EXPO_PUBLIC_OTP_PROXY_SECRET in the app must match.
+ */
+app.post("/api/otp/send-sign-in", async (c) => {
+  const serverSecret = process.env.OTP_PROXY_SECRET?.trim();
+  if (serverSecret) {
+    const sent = c.req.header("x-otp-proxy-secret")?.trim();
+    if (sent !== serverSecret) {
+      return c.json({ ok: false, error: "unauthorized" }, 401);
+    }
+  }
+
+  let body: { toE164?: string; code?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const toE164 = typeof body.toE164 === "string" ? body.toE164.trim() : "";
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+
+  const result = await sendSignInOtpViaTwilioServer(toE164, code);
+  if (result.ok) {
+    return c.json({ ok: true });
+  }
+  return c.json(
+    { ok: false, error: "send_failed", upstreamStatus: result.status, detail: result.detail },
+    502
+  );
+});
 
 // Location tracking - higher limit for real-time updates
 app.use("/api/location*", rateLimit.location);

@@ -3,6 +3,8 @@
  * Runs the Hono app with CORS configuration
  */
 
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+
 const app = require('./hono.ts').default;
 const port = process.env.PORT || 3000;
 
