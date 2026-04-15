@@ -37,7 +37,7 @@ const OAUTH_CONFIGS: Record<OAuthProvider, OAuthConfig> = {
   google: {
     clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
     redirectUri: AuthSession.makeRedirectUri({
-      scheme: 'taxiapp',
+      scheme: 'myapp',
       path: 'oauth/google',
     }),
     scopes: ['profile', 'email'],
@@ -45,7 +45,7 @@ const OAUTH_CONFIGS: Record<OAuthProvider, OAuthConfig> = {
   apple: {
     clientId: process.env.EXPO_PUBLIC_APPLE_CLIENT_ID || '',
     redirectUri: AuthSession.makeRedirectUri({
-      scheme: 'taxiapp',
+      scheme: 'myapp',
       path: 'oauth/apple',
     }),
     scopes: ['name', 'email'],
