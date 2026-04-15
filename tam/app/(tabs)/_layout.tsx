@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { Home, MapPin, MessageSquare, User, CirclePlus } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
@@ -54,6 +54,12 @@ export default function TabLayout() {
           title: 'Post Ride',
           href: user?.type === 'driver' ? '/post-ride' : null,
           tabBarIcon: ({ color, size }) => <CirclePlus size={size} color={color} />,
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+            router.push('/rides/post');
+          },
         }}
       />
       <Tabs.Screen
