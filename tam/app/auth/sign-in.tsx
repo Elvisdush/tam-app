@@ -94,8 +94,7 @@ export default function SignInScreen() {
   };
 
   const handleOAuthSuccess = () => {
-    // Navigate to home or appropriate screen after successful OAuth sign-in
-    router.replace('/');
+    router.replace('/home');
   };
 
   return (
