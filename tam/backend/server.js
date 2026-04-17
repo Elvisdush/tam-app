@@ -17,7 +17,7 @@ console.log(`🧪 Test CORS with: npm run cors:test`);
 const server = serve(
   {
     fetch: app.fetch,
-    port,
+    port: PORT,
   },
   (info) => {
     const p = info.port;
@@ -29,7 +29,7 @@ const server = serve(
 
 server.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
-    console.error(`\n❌ Port ${port} is already in use (EADDRINUSE).`);
+    console.error(`\n❌ Port ${PORT} is already in use (EADDRINUSE).`);
     console.error('   • Stop the other server (Ctrl+C in its terminal), or close the app using that port.');
     console.error('   • Or use another port, e.g. PowerShell:  $env:PORT=3001; npm run server');
     console.error('                            cmd.exe:       set PORT=3001&& npm run server\n');
