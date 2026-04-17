@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { publicProcedure } from '../../../create-context';
-import { searchPlacesSuggestions } from '@/lib/places-search';
+import { searchPlacesSuggestions } from '../../../../../frontend/lib/places-search';
 
 function getGoogleMapsApiKey(): string {
   return (

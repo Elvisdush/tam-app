@@ -1,7 +1,18 @@
+const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 const os = require('os');
 
-const config = getDefaultConfig(__dirname);
+const projectRoot = __dirname;
+const workspaceRoot = path.resolve(projectRoot, '..');
+
+const config = getDefaultConfig(projectRoot);
+
+// Dependencies are installed at repo root; Metro must watch and resolve from parent `node_modules`
+config.watchFolders = [workspaceRoot];
+config.resolver.nodeModulesPaths = [
+  path.resolve(projectRoot, 'node_modules'),
+  path.resolve(workspaceRoot, 'node_modules'),
+];
 
 // Use @teovilla/react-native-web-maps for web so react-native-maps works on web
 config.resolver.resolveRequest = (context, moduleName, platform) => {
