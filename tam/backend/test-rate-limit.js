@@ -84,7 +84,7 @@ async function runRateLimitTest(testCase) {
   console.log(`   Interval: ${testCase.interval}ms`);
   console.log(`   Expected: ${testCase.expected}`);
 
-  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
   const results = [];
   let rateLimitedCount = 0;
   let successCount = 0;
@@ -161,7 +161,7 @@ async function runRateLimitTest(testCase) {
 async function testRateLimitStats() {
   console.log('\n📊 Testing Rate Limit Statistics...');
 
-  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
   
   try {
     const response = await fetch(`${baseUrl}/admin/rate-limit-stats`);
@@ -186,7 +186,7 @@ async function testRateLimitStats() {
 async function testRateLimitReset() {
   console.log('\n🔄 Testing Rate Limit Reset...');
 
-  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
   
   try {
     // Get current stats

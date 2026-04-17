@@ -38,7 +38,7 @@ const testCases = [
 
 async function testCorsOrigin(origin) {
   try {
-    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
     const response = await fetch(`${baseUrl}/cors-test`, {
       method: 'GET',
       headers: origin ? { 'Origin': origin } : {}
@@ -94,7 +94,7 @@ async function runCorsTests() {
 
   console.log('🛡️  Security Headers Test:');
   try {
-    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
     const response = await fetch(`${baseUrl}/health`);
     
     const securityHeaders = {

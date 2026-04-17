@@ -166,7 +166,7 @@ async function runDNSSecurityTest(testCase) {
       break;
     case 'dnsHealth':
     case 'securityScore':
-      const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+      const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
       result = await testDNSSecurityEndpoint(baseUrl, testCase.endpoint);
       break;
     default:
@@ -229,7 +229,7 @@ async function runDNSSecurityTest(testCase) {
 async function testDNSRecords() {
   console.log('\n📋 Testing DNS Records Configuration...');
   
-  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
   
   try {
     const response = await fetch(`${baseUrl}/admin/dns-records`);
@@ -261,7 +261,7 @@ async function testDNSRecords() {
 async function testDNSHealthMonitoring() {
   console.log('\n🏥 Testing DNS Health Monitoring...');
   
-  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
   
   try {
     const response = await fetch(`${baseUrl}/admin/dns-health`);
@@ -290,7 +290,7 @@ async function testDNSHealthMonitoring() {
 async function testDNSSecurityScore() {
   console.log('\n🔒 Testing DNS Security Score...');
   
-  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.API_BASE_URL || 'http://localhost:3005';
   
   try {
     const response = await fetch(`${baseUrl}/admin/dns-security`);
