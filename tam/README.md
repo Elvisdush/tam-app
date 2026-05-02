@@ -1,6 +1,57 @@
-# tam-app
+# 🚖 TAM App - Taxi & Ride Management System
 
-Expo (React Native) ride and navigation app: drivers, passengers, maps, OTP sign-in, and a small Hono API for web-only features.
+A comprehensive taxi and ride management application built with Expo (React Native) for mobile clients and Hono for backend services. Features include driver/passenger management, real-time navigation, OTP authentication, and advanced security middleware.
+
+## 🏗️ System Architecture Overview
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Mobile Client  │    │   Web Client    │    │   Admin Panel   │
+│   (Expo App)     │    │   (React Web)   │    │   (Dashboard)   │
+└─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
+          │                      │                      │
+          └──────────────────────┼──────────────────────┘
+                                 │
+                    ┌─────────────┴─────────────┐
+                    │      API Gateway          │
+                    │   (Hono Server:3005)     │
+                    └─────────────┬─────────────┘
+                                 │
+          ┌────────────────────────┼────────────────────────┐
+          │                        │                        │
+    ┌─────┴─────┐          ┌─────┴─────┐          ┌─────┴─────┐
+    │   Auth    │          │   Maps    │          │  Payment  │
+    │ Service   │          │ Service   │          │ Service   │
+    └─────┬─────┘          └─────┬─────┘          └─────┬─────┘
+          │                        │                        │
+    ┌─────┴─────┐          ┌─────┴─────┐          ┌─────┴─────┐
+    │   OTP     │          │  Google   │          │  Stripe   │
+    │  (Twilio) │          │   Maps    │          │   API    │
+    └───────────┘          └───────────┘          └───────────┘
+```
+
+## 🔧 Core Components
+
+### 📱 Frontend (Expo React Native)
+- **Navigation**: React Navigation with expo-router
+- **State Management**: Zustand stores
+- **Maps**: React Native Maps with Google Maps integration
+- **Authentication**: OTP-based sign-in with Twilio SMS
+- **UI Components**: Custom components with Expo Vector Icons
+
+### 🖥️ Backend (Hono + TypeScript)
+- **API Framework**: Hono with TypeScript
+- **Authentication**: JWT + OTP verification
+- **Rate Limiting**: Configurable per-endpoint limits
+- **CORS**: Environment-based CORS configuration
+- **DNS Security**: Advanced DNS monitoring and validation
+- **tRPC**: Type-safe API communication
+
+### 🛡️ Security Middleware
+- **Rate Limiting**: Multi-tier rate limiting with Redis fallback
+- **CORS Protection**: Environment-specific CORS policies
+- **DNS Security**: DNS record validation and monitoring
+- **Request Validation**: Input sanitization and validation
 
 ## Repository layout
 
@@ -12,32 +63,297 @@ Expo (React Native) ride and navigation app: drivers, passengers, maps, OTP sign
 
 Run all npm scripts from the **repository root** (the folder that contains `frontend/` and `backend/`).
 
-## Requirements
+## 🔄 Data Flow & System Interactions
 
-- Node.js 20+ (22 works)
-- npm (use `--legacy-peer-deps` if install fails on peer conflicts)
+```
+📱 Mobile App Request Flow:
 
-## Setup
+1. User Action → Frontend Component
+2. Component → Zustand Store Update
+3. Store → API Call (tRPC/HTTP)
+4. API Call → Rate Limiting Middleware
+5. Rate Limit → CORS Validation
+6. CORS → Authentication Check
+7. Auth → Business Logic
+8. Logic → Database/External API
+9. Response → Security Headers
+10. Headers → Frontend Update
+11. Update → UI Re-render
+
+🔐 Authentication Flow:
+
+Mobile App → OTP Request → Twilio SMS → User Receives Code
+→ User Enters Code → Backend Validation → JWT Token
+→ Token Storage → Authenticated Requests
+
+🗺️ Real-time Location Flow:
+
+Driver App → Location Updates → WebSocket/API
+→ Backend Processing → Passenger App Updates
+→ Map Display → Route Calculation
+```
+
+## 🚀 Quick Start Guide
+
+### Prerequisites
+- **Node.js**: 20+ (22 works)
+- **npm**: Use `--legacy-peer-deps` for peer conflicts
+- **Expo Go**: SDK 52 compatible version
+- **Twilio Account**: For SMS OTP (optional for development)
+
+### Environment Setup
+```bash
+# Clone and install
+git clone <repository-url>
+cd tam-app
+npm install --legacy-peer-deps
+
+# Environment variables
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+### Development Servers
+```bash
+# Terminal 1: Backend API Server
+npm run server
+# → http://localhost:3005
+
+# Terminal 2: Frontend Development
+cd frontend
+npx expo start --offline
+# → http://localhost:8081 (Web)
+# → Scan QR code for mobile
+```
+
+## �️ Development Workflow
+
+### Project Structure Deep Dive
+```
+tam-app/tam/
+├── frontend/                    # Expo React Native App
+│   ├── app/                     # Expo Router screens
+│   │   ├── (tabs)/             # Tab navigation
+│   │   ├── auth/               # Authentication screens
+│   │   └── _layout.tsx         # Root layout
+│   ├── components/             # Reusable UI components
+│   ├── lib/                    # Utility functions
+│   │   ├── otp-sms.ts         # SMS OTP handling
+│   │   └── api.ts             # API client
+│   ├── store/                  # Zustand state management
+│   └── assets/                 # Images, fonts, icons
+├── backend/                    # Hono API Server
+│   ├── middleware/             # Security middleware
+│   │   ├── rate-limit.ts      # Rate limiting
+│   │   └── cors.ts            # CORS handling
+│   ├── config/                 # Configuration files
+│   │   └── dns-security.ts    # DNS security config
+│   ├── test-*.js              # Test scripts
+│   ├── server.js              # Node.js entry point
+│   └── hono.ts                # Main Hono app
+├── package.json               # Dependencies and scripts
+└── .env.example               # Environment variables template
+```
+
+### Security Architecture
+```
+🔒 Security Layers:
+
+1. Rate Limiting (backend/middleware/rate-limit.ts)
+   ├── Per-endpoint limits
+   ├── User tier based limits
+   ├── Trusted origin bypass
+   └── Redis/In-memory storage
+
+2. CORS Protection (backend/middleware/cors.ts)
+   ├── Environment-specific policies
+   ├── Allowed origins whitelist
+   └── Preflight request handling
+
+3. DNS Security (backend/config/dns-security.ts)
+   ├── DNS record validation
+   ├── SSL certificate monitoring
+   ├── Security scoring system
+   └── Health check endpoints
+
+4. Authentication
+   ├── OTP-based sign-in
+   ├── JWT token management
+   ├── Session validation
+   └── Rate-limited auth attempts
+```
+
+### API Endpoints Overview
+```
+🌐 Available Endpoints (http://localhost:3005):
+
+Authentication:
+├── POST /api/otp/send-sign-in     # Send OTP SMS
+├── POST /api/otp/verify-sign-in    # Verify OTP
+└── POST /api/auth/refresh          # Refresh JWT
+
+User Management:
+├── GET  /api/user/profile          # Get user profile
+├── PUT  /api/user/profile          # Update profile
+└── DELETE /api/user/account        # Delete account
+
+Ride Management:
+├── POST /api/rides/request         # Request ride
+├── GET  /api/rides/active          # Active rides
+├── PUT  /api/rides/:id/status      # Update ride status
+└── GET  /api/rides/history         # Ride history
+
+Maps & Location:
+├── GET  /api/maps/nearby-drivers   # Find nearby drivers
+├── POST /api/maps/route            # Calculate route
+└── PUT  /api/location/update       # Update location
+
+Admin & Monitoring:
+├── GET  /admin/stats               # System statistics
+├── GET  /admin/health              # Health check
+├── GET  /admin/dns-security        # DNS security info
+└── POST /admin/reset-rate-limit    # Reset rate limits
+```
+
+## 📋 Requirements
 
 1. Clone the repo and open the project root (`tam-app/tam`).
 
 2. Install dependencies:
-
    ```bash
    npm install --legacy-peer-deps
    ```
 
 3. Environment variables are **not** committed. Copy the example file and edit values:
-
    ```bash
    copy .env.example .env
    ```
-
    On macOS/Linux: `cp .env.example .env`
 
 4. Fill `.env` using comments in `.env.example` (Twilio, Firebase if applicable, Google Maps / Routes, OAuth client IDs, etc.).
 
 5. Restart the dev server after any `.env` change (`npm run expo:start:clear`).
+
+## 🧪 Testing & Security
+
+### Automated Testing
+```bash
+# Test CORS configuration
+npm run cors:test
+
+# Test rate limiting
+npm run rate-limit:test
+
+# Test DNS security
+npm run dns:test
+
+# Run all security tests
+npm run security:test
+```
+
+### Security Testing
+- **Rate Limiting**: Automated tests for different user tiers
+- **CORS**: Tests for allowed/blocked origins
+- **DNS Security**: DNS record validation and SSL checks
+- **Authentication**: OTP flow testing
+
+## 🚀 Deployment
+
+### Development Environment
+```bash
+# Backend server (port 3005)
+npm run server
+
+# Frontend development (port 8081)
+npm run expo:start
+
+# Web version
+npm run expo:start:web
+```
+
+### Production Environment
+```bash
+# Production backend
+npm run server:prod
+
+# Production frontend
+npm run expo:start:prod
+
+# Security testing in production
+npm run security:test:prod
+```
+
+## 📊 Monitoring & Analytics
+
+### Health Checks
+- **Backend Health**: `GET /health`
+- **DNS Security**: `GET /admin/dns-security`
+- **Rate Limit Stats**: `GET /admin/stats`
+- **System Metrics**: Available via admin endpoints
+
+### Logging
+- Request/response logging
+- Security event tracking
+- Rate limit violations
+- DNS security alerts
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+1. **"Body is unusable: Body has already been read"**
+   ```bash
+   npx expo start --offline
+   ```
+
+2. **Metro dependency errors**
+   ```bash
+   cd frontend
+   rm -rf node_modules
+   npm install --legacy-peer-deps
+   ```
+
+3. **Port conflicts**
+   ```bash
+   # Check what's using the port
+   netstat -ano | findstr :3005
+   # Kill the process
+   taskkill /PID <PID> /F
+   ```
+
+4. **Expo Go compatibility**
+   - Use SDK 52 compatible version
+   - Or upgrade project to SDK 54
+
+### Development Tips
+- Always use `--offline` flag for Expo to avoid network issues
+- Use `--legacy-peer-deps` for npm install
+- Check backend server is running before testing frontend
+- Monitor rate limits during development
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make changes with proper testing
+4. Run security tests before committing
+5. Submit pull request
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+## 🆘 Support
+
+For issues and questions:
+- Check troubleshooting section
+- Review security testing logs
+- Verify environment configuration
+- Check API health endpoints
+
+---
+
+**🎉 Your TAM App development environment is now fully configured and documented!**
 
 ## Run the app
 
