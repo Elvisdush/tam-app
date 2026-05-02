@@ -22,9 +22,17 @@ export default function RootLayout() {
     const unsubHazards = useRoadHazardsStore.getState().subscribeRoadHazards();
 
     async function prepare() {
-      loadUsers();
-      loadMessages();
-      loadRides();
+      try {
+        // Load stores with timeout protection
+        await Promise.all([
+          Promise.race([loadUsers(), new Promise(resolve => setTimeout(resolve, 2000))]),
+          Promise.race([loadMessages(), new Promise(resolve => setTimeout(resolve, 2000))]),
+          Promise.race([loadRides(), new Promise(resolve => setTimeout(resolve, 2000))])
+        ]);
+      } catch (error) {
+        console.warn('Store loading timeout or error:', error);
+      }
+      
       try {
         const g = globalThis as typeof globalThis & { __authStore?: { getState: () => { user: unknown } } };
         g.__authStore = { getState: () => ({ user: useAuthStore.getState().user }) };
@@ -32,7 +40,7 @@ export default function RootLayout() {
         /* dev helpers only — must not break native */
       }
       // Keep native splash visible long enough to read logo (see app.json splash.image)
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 500));
       if (!cancelled) {
         await SplashScreen.hideAsync().catch(() => {});
       }

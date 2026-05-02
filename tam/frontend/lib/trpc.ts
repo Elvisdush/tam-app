@@ -9,7 +9,11 @@ const getBaseUrl = () => {
   if (process.env.EXPO_PUBLIC_RORK_API_BASE_URL) {
     return process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
   }
-  // Fallback for local dev - set EXPO_PUBLIC_RORK_API_BASE_URL in .env for your Rork backend
+  // Fallback for local dev - use local backend server
+  if (__DEV__) {
+    return "http://localhost:3005";
+  }
+  // Production fallback
   return "https://rork.com";
 };
 
