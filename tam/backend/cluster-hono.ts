@@ -9,7 +9,7 @@ const cluster = require('cluster');
 const os = require('os');
 const { serve } = require('@hono/node-server');
 const app = require('./hono.ts').default;
-const { createRedisRateLimit, createTrustedRateLimit } = require('./middleware/rate-limit');
+const { createRateLimit, createTrustedRateLimit } = require('./middleware/rate-limit');
 
 const numCPUs = os.cpus().length;
 const PORT = process.env.PORT || 3005;
@@ -73,7 +73,7 @@ if (cluster.isMaster) {
   }));
   
   // Apply Redis-based rate limiting for sensitive endpoints
-  app.use("/api/otp/*", createRedisRateLimit({
+  app.use("/api/otp/*", createRateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 5, // Strict OTP limits
     message: 'Too many OTP attempts, please try again later.',
