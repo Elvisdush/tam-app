@@ -11,7 +11,7 @@ const getBaseUrl = () => {
   }
   // Fallback for local dev - use local backend server
   if (__DEV__) {
-    return "http://localhost:3005";
+    return "http://localhost:3006";
   }
   // Production fallback
   return "https://rork.com";
