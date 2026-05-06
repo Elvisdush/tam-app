@@ -35,7 +35,11 @@
     "security:full": "npm run security:test && npm run server:dev",
     "cache:stats": "node backend/examples/cache-stats.js",
     "cache:clear": "node backend/examples/cache-clear.js",
-    "cache:test": "node backend/examples/cache-test.js"
+    "cache:test": "node backend/examples/cache-test.js",
+    "server:consistent": "tsx backend/cluster-hono-consistent.js",
+    "server:consistent:dev": "tsx backend/cluster-hono-consistent.js",
+    "server:consistent:prod": "tsx backend/cluster-hono-consistent.js",
+    "load-balancer:test": "node backend/examples/test-consistent-hashing.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
