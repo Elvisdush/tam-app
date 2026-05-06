@@ -592,7 +592,7 @@ REDIS_HOST=localhost REDIS_PORT=6379 npm run server:cluster:prod
 #### **Environment Variables**
 ```bash
 # Server Configuration
-PORT=3005
+PORT=3006
 NODE_ENV=production
 
 # Redis Configuration (Optional)
@@ -615,7 +615,7 @@ const customConfig = {
 ### 🔍 Troubleshooting
 
 #### **Common Issues**
-- **Port Conflicts**: Ensure port 3005 is available
+- **Port Conflicts**: Ensure port 3006 is available (note: default changed from 3005)
 - **Worker Crashes**: Check logs for worker error details
 - **Redis Connection**: Verify Redis is running for distributed rate limiting
 - **Memory Issues**: Monitor memory usage across workers

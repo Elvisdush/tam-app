@@ -12,7 +12,7 @@ const app = require('./hono.ts').default;
 const { createRateLimit, createTrustedRateLimit } = require('./middleware/rate-limit');
 
 const numCPUs = os.cpus().length;
-const PORT = process.env.PORT || 3005;
+const PORT = process.env.PORT || 3006;
 
 if (cluster.isMaster) {
   console.log(`🚀 Starting cluster with ${numCPUs} workers`);
