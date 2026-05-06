@@ -32,7 +32,10 @@
     "security:test": "npm run cors:test && npm run rate-limit:test && npm run dns:test",
     "security:test:prod": "npm run cors:test:prod && npm run rate-limit:test:prod && npm run dns:test:prod",
     "security:test:dev": "npm run cors:test:dev && npm run rate-limit:test:dev && npm run dns:test:dev",
-    "security:full": "npm run security:test && npm run server:dev"
+    "security:full": "npm run security:test && npm run server:dev",
+    "cache:stats": "node backend/examples/cache-stats.js",
+    "cache:clear": "node backend/examples/cache-clear.js",
+    "cache:test": "node backend/examples/cache-test.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -48,6 +51,7 @@
     "@trpc/react-query": "^11.7.2",
     "@trpc/server": "^11.7.2",
     "@types/redis": "^4.0.10",
+    "crypto": "^1.0.1",
     "dotenv": "^16.6.1",
     "expo": "^54.0.21",
     "expo-auth-session": "~6.0.2",
