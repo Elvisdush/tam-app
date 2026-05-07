@@ -45,7 +45,12 @@
     "server:lifecycle:prod": "node backend/api-lifecycle/simple-lifecycle-server.js",
     "api:version": "node backend/examples/test-api-versioning.js",
     "api:migration": "node backend/examples/test-api-migration.js",
-    "api:deprecation": "node backend/examples/test-api-deprecation.js"
+    "api:deprecation": "node backend/examples/test-api-deprecation.js",
+    "server:secure": "node backend/security/final-secure-server.js",
+    "server:secure:dev": "node backend/security/final-secure-server.js",
+    "server:secure:prod": "node backend/security/final-secure-server.js",
+    "security:advanced": "node backend/examples/test-security.js",
+    "security:audit": "node backend/examples/security-audit.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -61,6 +66,7 @@
     "@trpc/react-query": "^11.7.2",
     "@trpc/server": "^11.7.2",
     "@types/redis": "^4.0.10",
+    "bcrypt": "^5.1.1",
     "crypto": "^1.0.1",
     "dotenv": "^16.6.1",
     "expo": "^54.0.21",
@@ -85,7 +91,10 @@
     "expo-system-ui": "~6.0.8",
     "expo-web-browser": "~15.0.8",
     "firebase": "^12.6.0",
+    "helmet": "^7.2.0",
     "hono": "^4.10.7",
+    "joi": "^17.13.3",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react-native": "^0.475.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
