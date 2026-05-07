@@ -39,7 +39,13 @@
     "server:consistent": "tsx backend/cluster-hono-consistent.js",
     "server:consistent:dev": "tsx backend/cluster-hono-consistent.js",
     "server:consistent:prod": "tsx backend/cluster-hono-consistent.js",
-    "load-balancer:test": "node backend/examples/test-consistent-hashing.js"
+    "load-balancer:test": "node backend/examples/test-consistent-hashing.js",
+    "server:lifecycle": "node backend/api-lifecycle/simple-lifecycle-server.js",
+    "server:lifecycle:dev": "node backend/api-lifecycle/simple-lifecycle-server.js",
+    "server:lifecycle:prod": "node backend/api-lifecycle/simple-lifecycle-server.js",
+    "api:version": "node backend/examples/test-api-versioning.js",
+    "api:migration": "node backend/examples/test-api-migration.js",
+    "api:deprecation": "node backend/examples/test-api-deprecation.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
