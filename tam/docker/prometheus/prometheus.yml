@@ -1,0 +1,83 @@
+# Prometheus configuration for TAM App monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Frontend monitoring
+  - job_name: 'tam-frontend'
+    static_configs:
+      - targets: ['frontend:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Backend API monitoring
+  - job_name: 'tam-backend'
+    static_configs:
+      - targets: ['backend:3006']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Secure Backend API monitoring
+  - job_name: 'tam-secure-backend'
+    static_configs:
+      - targets: ['secure-backend:3011']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Lifecycle Backend monitoring
+  - job_name: 'tam-lifecycle-backend'
+    static_configs:
+      - targets: ['lifecycle-backend:3009']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Redis monitoring
+  - job_name: 'tam-redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Nginx monitoring
+  - job_name: 'tam-nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    metrics_path: '/nginx-status'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Docker container monitoring
+  - job_name: 'docker-containers'
+    static_configs:
+      - targets: ['172.17.0.1:9323']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Node Exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['172.17.0.1:9100']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093

@@ -8,7 +8,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const cluster = require('cluster');
 const os = require('os');
 const { serve } = require('@hono/node-server');
-const app = require('./hono.ts').default;
+const { app } = require('./hono.js');
 const { createRateLimit, createTrustedRateLimit } = require('./middleware/rate-limit');
 
 const numCPUs = os.cpus().length;
