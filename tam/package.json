@@ -49,6 +49,8 @@
     "server:secure": "node backend/security/final-secure-server.js",
     "server:secure:dev": "node backend/security/final-secure-server.js",
     "server:secure:prod": "node backend/security/final-secure-server.js",
+    "server:amqp": "node backend/hono-amqp.js",
+    "server:amqp:dev": "node backend/hono-amqp.js"
     "security:advanced": "node backend/examples/test-security.js",
     "security:audit": "node backend/examples/security-audit.js"
   },
@@ -68,6 +70,8 @@
     "@types/redis": "^4.0.10",
     "bcrypt": "^5.1.1",
     "crypto": "^1.0.1",
+    "amqplib": "^0.10.3",
+    "uuid": "^9.0.1",
     "dotenv": "^16.6.1",
     "expo": "^54.0.21",
     "expo-auth-session": "~6.0.2",
