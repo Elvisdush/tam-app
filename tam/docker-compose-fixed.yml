@@ -92,8 +92,8 @@ services:
     networks:
       - tam-network
     depends_on:
-      - backend
-        condition: service_healthy
+      - backend:
+          condition: service_healthy
 
   # Nginx reverse proxy
   nginx:
