@@ -50,7 +50,7 @@
     "server:secure:dev": "node backend/security/final-secure-server.js",
     "server:secure:prod": "node backend/security/final-secure-server.js",
     "server:amqp": "node backend/hono-amqp.js",
-    "server:amqp:dev": "node backend/hono-amqp.js"
+    "server:amqp:dev": "node backend/hono-amqp.js",
     "security:advanced": "node backend/examples/test-security.js",
     "security:audit": "node backend/examples/security-audit.js"
   },
@@ -68,10 +68,9 @@
     "@trpc/react-query": "^11.7.2",
     "@trpc/server": "^11.7.2",
     "@types/redis": "^4.0.10",
+    "amqplib": "^0.10.3",
     "bcrypt": "^5.1.1",
     "crypto": "^1.0.1",
-    "amqplib": "^0.10.3",
-    "uuid": "^9.0.1",
     "dotenv": "^16.6.1",
     "expo": "^54.0.21",
     "expo-auth-session": "~6.0.2",
@@ -111,6 +110,7 @@
     "react-native-web": "^0.21.0",
     "redis": "^5.12.1",
     "superjson": "^2.2.6",
+    "uuid": "^9.0.1",
     "zod": "^4.1.13",
     "zustand": "^5.0.2"
   },
