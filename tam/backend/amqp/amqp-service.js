@@ -5,6 +5,8 @@
 
 const AMQPConnectionManager = require('./connection-manager');
 const { MessageQueueManager, QUEUE_TYPES, PRIORITIES } = require('./message-queue-manager');
+const AMQPErrorHandler = require('./error-handler');
+const DeadLetterProcessor = require('./dead-letter-processor');
 const { v4: uuidv4 } = require('uuid');
 
 class AMQPService extends require('events').EventEmitter {
@@ -24,10 +26,25 @@ class AMQPService extends require('events').EventEmitter {
     
     this.connectionManager = new AMQPConnectionManager(this.config);
     this.messageQueueManager = new MessageQueueManager(this.connectionManager);
+    this.errorHandler = new AMQPErrorHandler({
+      maxRetries: config.maxRetries || 5,
+      initialRetryDelay: config.initialRetryDelay || 1000,
+      maxRetryDelay: config.maxRetryDelay || 30000,
+      circuitBreakerThreshold: config.circuitBreakerThreshold || 5,
+      circuitBreakerTimeout: config.circuitBreakerTimeout || 60000,
+      deadLetterQueueEnabled: config.deadLetterQueueEnabled !== false
+    });
+    this.deadLetterProcessor = new DeadLetterProcessor({
+      deadLetterQueue: 'dead.letter',
+      maxProcessingAttempts: config.maxProcessingAttempts || 3,
+      saveFailedMessages: config.saveFailedMessages !== false
+    });
+    
     this.isInitialized = false;
     this.isShuttingDown = false;
     
     this.setupEventHandlers();
+    this.setupErrorHandlers();
   }
 
   setupEventHandlers() {
@@ -72,6 +89,40 @@ class AMQPService extends require('events').EventEmitter {
     });
   }
 
+  setupErrorHandlers() {
+    // Error handler events
+    this.errorHandler.on('retry', (errorInfo) => {
+      console.log(`🔄 Retry attempt ${errorInfo.retryCount} for message ${errorInfo.errorId}`);
+      this.emit('messageRetry', errorInfo);
+    });
+
+    this.errorHandler.on('finalFailure', (errorInfo) => {
+      console.log(`❌ Final failure for message ${errorInfo.errorId}`);
+      this.emit('messageFinalFailure', errorInfo);
+    });
+
+    this.errorHandler.on('circuitBreakerOpen', (errorInfo) => {
+      console.log('🚫 Circuit breaker opened');
+      this.emit('circuitBreakerOpen', errorInfo);
+    });
+
+    this.errorHandler.on('circuitBreakerReset', () => {
+      console.log('✅ Circuit breaker reset');
+      this.emit('circuitBreakerReset');
+    });
+
+    // Dead letter processor events
+    this.deadLetterProcessor.on('messageRecovered', (data) => {
+      console.log(`✅ Message recovered: ${data.message.errorId}`);
+      this.emit('messageRecovered', data);
+    });
+
+    this.deadLetterProcessor.on('messagePermanentlyFailed', (data) => {
+      console.log(`💀 Message permanently failed: ${data.message.errorId}`);
+      this.emit('messagePermanentlyFailed', data);
+    });
+  }
+
   async initialize() {
     if (this.isInitialized) {
       return;
@@ -88,6 +139,9 @@ class AMQPService extends require('events').EventEmitter {
       
       // Create standard queues
       await this.setupStandardQueues();
+      
+      // Initialize dead letter processor
+      await this.deadLetterProcessor.initialize(this);
       
       this.isInitialized = true;
       console.log('✅ AMQP service initialized');
@@ -148,38 +202,47 @@ class AMQPService extends require('events').EventEmitter {
     }
   }
 
-  // Message publishing methods
+  // Message publishing methods with retry logic
   async publishLocationUpdate(locationData, priority = PRIORITIES.NORMAL) {
+    const messageId = uuidv4();
     const message = {
+      id: messageId,
       type: 'location.update',
       data: locationData,
       timestamp: new Date().toISOString(),
       metadata: {
         source: 'tam-app',
-        version: '1.0.0'
+        version: '1.0.0',
+        priority: priority,
+        originalQueue: QUEUE_TYPES.LOCATION_UPDATES
       }
     };
 
-    return await this.messageQueueManager.sendMessage(QUEUE_TYPES.LOCATION_UPDATES, message, priority);
+    return await this.publishWithRetry(QUEUE_TYPES.LOCATION_UPDATES, message, priority, messageId);
   }
 
   async publishUserNotification(notificationData, priority = PRIORITIES.HIGH) {
+    const messageId = uuidv4();
     const message = {
+      id: messageId,
       type: 'user.notification',
       data: notificationData,
       timestamp: new Date().toISOString(),
       metadata: {
         source: 'tam-app',
         version: '1.0.0',
-        priority: 'high'
+        priority: priority,
+        originalQueue: QUEUE_TYPES.USER_NOTIFICATIONS
       }
     };
 
-    return await this.messageQueueManager.sendMessage(QUEUE_TYPES.USER_NOTIFICATIONS, notificationData, priority);
+    return await this.publishWithRetry(QUEUE_TYPES.USER_NOTIFICATIONS, message, priority, messageId);
   }
 
   async publishDataProcessing(taskData, priority = PRIORITIES.NORMAL) {
+    const messageId = uuidv4();
     const message = {
+      id: messageId,
       type: 'data.processing.task',
       data: taskData,
       timestamp: new Date().toISOString(),
@@ -189,36 +252,83 @@ class AMQPService extends require('events').EventEmitter {
       }
     };
 
-    return await this.messageQueueManager.sendMessage(QUEUE_TYPES.DATA_PROCESSING, taskData, priority);
+    return await this.publishWithRetry(QUEUE_TYPES.DATA_PROCESSING, message, priority, messageId);
+  }
+
+  /**
+   * Core retry method for all publish operations
+   */
+  async publishWithRetry(queueType, message, priority, messageId) {
+    const context = {
+      messageId: messageId,
+      queueType: queueType,
+      priority: priority,
+      originalMessage: message,
+      deadLetterQueue: 'dead.letter'
+    };
+
+    try {
+      // Attempt to publish message
+      const result = await this.messageQueueManager.sendMessage(queueType, message, priority);
+      
+      // Handle success
+      this.errorHandler.handleSuccess(messageId);
+      
+      return result;
+      
+    } catch (error) {
+      // Handle error with retry logic
+      const retryResult = await this.errorHandler.handleError(error, context);
+      
+      if (retryResult.success && retryResult.shouldRetry) {
+        // Retry the operation
+        console.log(`🔄 Retrying message publish [${messageId}] (attempt ${retryResult.retryCount})`);
+        return await this.publishWithRetry(queueType, message, priority, messageId);
+      } else if (retryResult.success) {
+        // Operation succeeded after retry
+        this.errorHandler.handleSuccess(messageId);
+        return { success: true, messageId: messageId, retryCount: retryResult.retryCount };
+      } else {
+        // Final failure - error handler will send to dead letter queue
+        throw new Error(`Message publish failed: ${retryResult.reason}`);
+      }
+    }
   }
 
   async publishAnalyticsEvent(eventData, priority = PRIORITIES.LOW) {
+    const messageId = uuidv4();
     const message = {
+      id: messageId,
       type: 'analytics.event',
       data: eventData,
       timestamp: new Date().toISOString(),
       metadata: {
         source: 'tam-app',
-        version: '1.0.0'
+        version: '1.0.0',
+        priority: priority,
+        originalQueue: QUEUE_TYPES.ANALYTICS_EVENTS
       }
     };
 
-    return await this.messageQueueManager.sendMessage(QUEUE_TYPES.ANALYTICS_EVENTS, eventData, priority);
+    return await this.publishWithRetry(QUEUE_TYPES.ANALYTICS_EVENTS, message, priority, messageId);
   }
 
   async publishSystemTask(taskData, priority = PRIORITIES.CRITICAL) {
+    const messageId = uuidv4();
     const message = {
+      id: messageId,
       type: 'system.task',
       data: taskData,
       timestamp: new Date().toISOString(),
       metadata: {
         source: 'tam-app',
         version: '1.0.0',
-        priority: 'critical'
+        priority: priority,
+        originalQueue: QUEUE_TYPES.SYSTEM_TASKS
       }
     };
 
-    return await this.messageQueueManager.sendMessage(QUEUE_TYPES.SYSTEM_TASKS, taskData, priority);
+    return await this.publishWithRetry(QUEUE_TYPES.SYSTEM_TASKS, message, priority, messageId);
   }
 
   // Message consumption methods
@@ -284,6 +394,66 @@ class AMQPService extends require('events').EventEmitter {
     return this.messageQueueManager.getQueueStats();
   }
 
+  /**
+   * Get comprehensive error and retry statistics
+   */
+  getErrorStats() {
+    return {
+      errorHandler: this.errorHandler.getErrorStats(),
+      deadLetterProcessor: this.deadLetterProcessor.getProcessingStats(),
+      circuitBreakerState: this.errorHandler.circuitBreakerState,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Reset error statistics
+   */
+  resetErrorStats() {
+    this.errorHandler.resetStats();
+    console.log('📊 Error statistics reset');
+  }
+
+  /**
+   * Get system health status
+   */
+  getHealthStatus() {
+    const connectionStatus = this.getConnectionStatus();
+    const errorStats = this.getErrorStats();
+    const queueStats = this.getQueueStats();
+
+    return {
+      status: this.calculateHealthStatus(connectionStatus, errorStats),
+      connection: connectionStatus,
+      errors: errorStats,
+      queues: queueStats,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Calculate overall health status
+   */
+  calculateHealthStatus(connectionStatus, errorStats) {
+    if (!connectionStatus.isConnected) {
+      return 'unhealthy';
+    }
+
+    if (errorStats.errorHandler.circuitBreakerState === 'OPEN') {
+      return 'degraded';
+    }
+
+    if (errorStats.errorHandler.totalErrors > 100) {
+      return 'degraded';
+    }
+
+    if (errorStats.errorHandler.retryFailure > errorStats.errorHandler.retrySuccess) {
+      return 'degraded';
+    }
+
+    return 'healthy';
+  }
+
   async shutdown() {
     if (this.isShuttingDown) {
       return;
@@ -293,6 +463,10 @@ class AMQPService extends require('events').EventEmitter {
     console.log('🔄 Shutting down AMQP service...');
 
     try {
+      // Shutdown error handlers and dead letter processor
+      await this.deadLetterProcessor.shutdown();
+      await this.errorHandler.shutdown();
+      
       await this.messageQueueManager.close();
       await this.connectionManager.close();
       console.log('✅ AMQP service shut down');
