@@ -51,6 +51,8 @@
     "server:secure:prod": "node backend/security/final-secure-server.js",
     "server:amqp": "node backend/hono-amqp.js",
     "server:amqp:dev": "node backend/hono-amqp.js",
+    "server:websocket": "node backend/hono-websocket-amqp.js",
+    "server:websocket:dev": "node backend/hono-websocket-amqp.js",
     "security:advanced": "node backend/examples/test-security.js",
     "security:audit": "node backend/examples/security-audit.js"
   },

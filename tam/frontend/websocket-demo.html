@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAM App WebSocket Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .status.connected { background-color: #d4edda; color: #155724; }
+        .status.disconnected { background-color: #f8d7da; color: #721c24; }
+        .status.connecting { background-color: #fff3cd; color: #856404; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+        .messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f9f9f9;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .message {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        .message.location { color: #007bff; }
+        .message.notification { color: #28a745; }
+        .message.analytics { color: #ffc107; }
+        .message.system { color: #dc3545; }
+        .message.connection { color: #6c757d; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .btn-warning { background-color: #ffc107; color: black; }
+        .btn-info { background-color: #17a2b8; color: white; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .stat {
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        .subscriptions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .subscription {
+            padding: 4px 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .subscription.active {
+            background-color: #28a745;
+            color: white;
+        }
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .clear-btn {
+            float: right;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 TAM App WebSocket Demo</h1>
+    
+    <div class="container">
+        <h2>🔌 Connection Status</h2>
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div class="stats">
+            <div class="stat">
+                <div id="messageCount" class="stat-value">0</div>
+                <div class="stat-label">Messages Received</div>
+            </div>
+            <div class="stat">
+                <div id="reconnectAttempts" class="stat-value">0</div>
+                <div class="stat-label">Reconnect Attempts</div>
+            </div>
+            <div class="stat">
+                <div id="queueSize" class="stat-value">0</div>
+                <div class="stat-label">Message Queue Size</div>
+            </div>
+            <div class="stat">
+                <div id="uptime" class="stat-value">0s</div>
+                <div class="stat-label">Connection Uptime</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="connectBtn" class="btn-primary" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" class="btn-danger" onclick="disconnect()" disabled>Disconnect</button>
+            <button id="clearBtn" class="btn-warning" onclick="clearMessages()">Clear Messages</button>
+            <button id="statusBtn" class="btn-info" onclick="requestStatus()">Request Status</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📋 Queue Subscriptions</h2>
+        <div class="subscriptions">
+            <div class="subscription" id="sub-location-updates">location.updates</div>
+            <div class="subscription" id="sub-user-notifications">user.notifications</div>
+            <div class="subscription" id="sub-data-processing">data.processing</div>
+            <div class="subscription" id="sub-analytics-events">analytics.events</div>
+            <div class="subscription" id="sub-system-tasks">system.tasks</div>
+            <div class="subscription" id="sub-dead-letter">dead.letter</div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn-primary" onclick="subscribeToAll()">Subscribe All</button>
+            <button class="btn-warning" onclick="unsubscribeFromAll()">Unsubscribe All</button>
+            <button class="btn-info" onclick="toggleSubscription('location.updates')">Toggle Location</button>
+            <button class="btn-info" onclick="toggleSubscription('user.notifications')">Toggle Notifications</button>
+            <button class="btn-info" onclick="toggleSubscription('analytics.events')">Toggle Analytics</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📤 Send Test Messages</h2>
+        
+        <div class="form-group">
+            <label for="messageType">Message Type:</label>
+            <select id="messageType">
+                <option value="location.update">Location Update</option>
+                <option value="user.notification">User Notification</option>
+                <option value="data.processing">Data Processing</option>
+                <option value="analytics.event">Analytics Event</option>
+                <option value="system.task">System Task</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="messageData">Message Data (JSON):</label>
+            <input type="text" id="messageData" value='{"test": "Hello WebSocket!"}' style="width: 100%;">
+        </div>
+        
+        <div class="form-group">
+            <label for="priority">Priority:</label>
+            <select id="priority">
+                <option value="low">Low</option>
+                <option value="normal" selected>Normal</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+            </select>
+        </div>
+        
+        <div class="controls">
+            <button class="btn-success" onclick="sendTestMessage()">Send Test Message</button>
+            <button class="btn-info" onclick="sendLocationUpdate()">Send Location Update</button>
+            <button class="btn-info" onclick="sendNotification()">Send Notification</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📨 Real-time Messages <button class="clear-btn btn-warning" onclick="clearMessages()">Clear</button></h2>
+        <div id="messages" class="messages"></div>
+    </div>
+
+    <script src="websocket-client.js"></script>
+    <script>
+        let messageCount = 0;
+        let connectionStartTime = null;
+        let uptimeInterval = null;
+
+        function updateStatus(status) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${status}`;
+            statusDiv.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        }
+
+        function addMessage(message, type = 'info') {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const messageText = `[${timestamp}] ${message}`;
+            
+            messageDiv.textContent = messageText;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            messageCount++;
+            document.getElementById('messageCount').textContent = messageCount;
+        }
+
+        function updateStats(stats) {
+            document.getElementById('reconnectAttempts').textContent = stats.reconnectAttempts || 0;
+            document.getElementById('queueSize').textContent = stats.messageQueueSize || 0;
+        }
+
+        function updateSubscriptionUI(subscriptions) {
+            const queueMap = {
+                'location.updates': 'sub-location-updates',
+                'user.notifications': 'sub-user-notifications',
+                'data.processing': 'sub-data-processing',
+                'analytics.events': 'sub-analytics-events',
+                'system.tasks': 'sub-system-tasks',
+                'dead.letter': 'sub-dead-letter'
+            };
+
+            // Reset all subscriptions
+            Object.values(queueMap).forEach(id => {
+                document.getElementById(id).className = 'subscription';
+            });
+
+            // Mark active subscriptions
+            subscriptions.forEach(queue => {
+                const id = queueMap[queue];
+                if (id) {
+                    document.getElementById(id).className = 'subscription active';
+                }
+            });
+        }
+
+        function updateUptime() {
+            if (connectionStartTime) {
+                const uptime = Math.floor((Date.now() - connectionStartTime) / 1000);
+                document.getElementById('uptime').textContent = `${uptime}s`;
+            }
+        }
+
+        function connect() {
+            if (window.tamWebSocket) {
+                window.tamWebSocket.connect();
+            }
+        }
+
+        function disconnect() {
+            if (window.tamWebSocket) {
+                window.tamWebSocket.disconnect();
+            }
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+            messageCount = 0;
+            document.getElementById('messageCount').textContent = '0';
+        }
+
+        function requestStatus() {
+            if (window.tamWebSocket) {
+                window.tamWebSocket.getStatus();
+            }
+        }
+
+        function subscribeToAll() {
+            if (window.tamWebSocket) {
+                const queues = ['location.updates', 'user.notifications', 'data.processing', 'analytics.events', 'system.tasks', 'dead.letter'];
+                window.tamWebSocket.subscribe(queues);
+            }
+        }
+
+        function unsubscribeFromAll() {
+            if (window.tamWebSocket) {
+                const queues = ['location.updates', 'user.notifications', 'data.processing', 'analytics.events', 'system.tasks', 'dead.letter'];
+                window.tamWebSocket.unsubscribe(queues);
+            }
+        }
+
+        function toggleSubscription(queue) {
+            if (window.tamWebSocket) {
+                const status = window.tamWebSocket.getConnectionStatus();
+                if (status.subscriptions.includes(queue)) {
+                    window.tamWebSocket.unsubscribe(queue);
+                } else {
+                    window.tamWebSocket.subscribe(queue);
+                }
+            }
+        }
+
+        async function sendTestMessage() {
+            const messageType = document.getElementById('messageType').value;
+            const messageData = document.getElementById('messageData').value;
+            const priority = document.getElementById('priority').value;
+
+            try {
+                const data = JSON.parse(messageData);
+                
+                const response = await fetch('http://localhost:3006/api/messages/publish', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        type: messageType,
+                        data: data,
+                        priority: priority,
+                        websocketBroadcast: true
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    addMessage(`✅ Message sent: ${result.messageId} (${messageType})`, 'success');
+                } else {
+                    addMessage(`❌ Failed to send message: ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                addMessage(`❌ Error sending message: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendLocationUpdate() {
+            await fetch('http://localhost:3006/api/location/updates', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    latitude: 40.7128,
+                    longitude: -74.0060,
+                    accuracy: 10,
+                    timestamp: new Date().toISOString(),
+                    priority: 'normal'
+                })
+            });
+            addMessage('📍 Location update sent', 'location');
+        }
+
+        async function sendNotification() {
+            await fetch('http://localhost:3006/api/notifications/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    userId: 'demo-user',
+                    title: 'Test Notification',
+                    message: 'This is a test notification from WebSocket demo',
+                    type: 'info',
+                    priority: 'normal'
+                })
+            });
+            addMessage('🔔 Notification sent', 'notification');
+        }
+
+        // Override WebSocket client event handlers
+        if (window.tamWebSocket) {
+            window.tamWebSocket.onConnect = () => {
+                updateStatus('connected');
+                connectionStartTime = Date.now();
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+                addMessage('🎊 Connected to WebSocket server', 'connection');
+                
+                // Start uptime counter
+                uptimeInterval = setInterval(updateUptime, 1000);
+            };
+
+            window.tamWebSocket.onDisconnect = () => {
+                updateStatus('disconnected');
+                connectionStartTime = null;
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+                addMessage('🔌 Disconnected from WebSocket server', 'connection');
+                
+                // Stop uptime counter
+                if (uptimeInterval) {
+                    clearInterval(uptimeInterval);
+                    uptimeInterval = null;
+                }
+                document.getElementById('uptime').textContent = '0s';
+            };
+
+            window.tamWebSocket.onError = (error) => {
+                updateStatus('error');
+                addMessage(`❌ WebSocket error: ${error.message || error}`, 'error');
+            };
+
+            window.tamWebSocket.onStatusChange = (status) => {
+                updateStatus(status);
+                const stats = window.tamWebSocket.getConnectionStatus();
+                updateStats(stats);
+                updateSubscriptionUI(stats.subscriptions);
+            };
+
+            window.tamWebSocket.onMessage = (message) => {
+                let type = 'info';
+                if (message.type === 'amqp_message') {
+                    type = message.queue.replace('.', '-');
+                } else if (message.type === 'connection' || message.type === 'subscription') {
+                    type = 'connection';
+                }
+                addMessage(JSON.stringify(message), type);
+            };
+        }
+
+        // Auto-connect when page loads
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.tamWebSocket) {
+                    window.tamWebSocket.connect();
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
