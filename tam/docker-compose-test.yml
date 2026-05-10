@@ -1,0 +1,126 @@
+services:
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: tam-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - tam-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Backend API with clustering and security
+  backend:
+    image: node:18-alpine
+    container_name: tam-backend
+    working_dir: /app
+    command: ["node", "hono.js"]
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=production
+      - PORT=3006
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./backend/hono.js:/app/hono.js
+      - ./backend/config:/app/config
+      - ./backend/middleware:/app/middleware
+      - ./backend/trpc:/app/trpc
+      - ./backend/logs:/app/logs
+    networks:
+      - tam-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Secure Backend API Server
+  secure-backend:
+    image: node:18-alpine
+    container_name: tam-secure-backend
+    working_dir: /app
+    command: ["node", "security/final-secure-server.js"]
+    restart: unless-stopped
+    ports:
+      - "3011:3011"
+    environment:
+      - NODE_ENV=production
+      - PORT=3011
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+    volumes:
+      - ./backend/security:/app/security
+      - ./backend/config:/app/config
+      - ./backend/middleware:/app/middleware
+      - ./backend/trpc:/app/trpc
+      - ./backend/logs:/app/logs
+    networks:
+      - tam-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # API Lifecycle Management Server
+  lifecycle-backend:
+    image: node:18-alpine
+    container_name: tam-lifecycle-backend
+    working_dir: /app
+    command: ["node", "api-lifecycle/simple-lifecycle-server.js"]
+    restart: unless-stopped
+    ports:
+      - "3009:3009"
+    environment:
+      - NODE_ENV=production
+      - PORT=3009
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./backend/api-lifecycle:/app/api-lifecycle
+      - ./backend/config:/app/config
+      - ./backend/middleware:/app/middleware
+      - ./backend/trpc:/app/trpc
+      - ./backend/logs:/app/logs
+    networks:
+      - tam-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3009/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  tam-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
