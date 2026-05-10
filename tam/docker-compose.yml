@@ -46,10 +46,10 @@ services:
 
   # Backend API with clustering and security
   backend:
-    image: node:18-alpine
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile.minimal
     container_name: tam-backend
-    working_dir: /app
-    command: ["node", "hono.js"]
     restart: unless-stopped
     ports:
       - "3006:3006"

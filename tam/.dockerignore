@@ -10,6 +10,37 @@ yarn-error.log*
 .yarn
 .pnpm-debug.log*
 
+# Frontend build artifacts
+frontend/node_modules
+frontend/build
+frontend/.expo
+frontend/dist
+
+# Backend build artifacts
+backend/node_modules
+backend/logs
+backend/uploads
+backend/temp
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
 # Environment files
 .env
 .env.local
