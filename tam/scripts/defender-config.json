@@ -1,0 +1,105 @@
+{
+  "name": "TAM App Defender Configuration",
+  "version": "1.0.0",
+  "description": "Microsoft Defender configuration for DevOps workflow",
+  "scope": "development",
+  "created": "2025-05-11T12:00:00Z",
+  "settings": {
+    "defender": {
+      "realtimeMonitoring": {
+        "enabled": false,
+        "description": "Disable real-time protection during development"
+      },
+      "scheduledScans": {
+        "enabled": false,
+        "description": "Disable scheduled scans during development"
+      },
+      "cloudProtection": {
+        "enabled": false,
+        "description": "Disable cloud protection during development"
+      },
+      "scriptScanning": {
+        "enabled": false,
+        "description": "Disable script scanning during development"
+      },
+      "behaviorMonitoring": {
+        "enabled": false,
+        "description": "Disable behavior monitoring during development"
+      }
+    },
+    "exclusions": {
+      "paths": [
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam\\node_modules",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam\\.git",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam\\logs",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam\\dist",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam\\build",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam\\backend",
+        "C:\\Users\\kayon\\OneDrive\\Desktop\\waze\\tam-app\\tam\\frontend"
+      ],
+      "extensions": [
+        "*.js",
+        "*.ts",
+        "*.jsx",
+        "*.tsx",
+        "*.json",
+        "*.md",
+        "*.yml",
+        "*.yaml",
+        "*.log",
+        "*.tmp",
+        "*.cache",
+        "node.exe",
+        "npm.exe",
+        "yarn.exe",
+        "docker.exe",
+        "git.exe"
+      ],
+      "processes": [
+        "node.exe",
+        "npm.exe",
+        "yarn.exe",
+        "docker.exe",
+        "docker-compose.exe",
+        "git.exe",
+        "code.exe",
+        "powershell.exe"
+      ]
+    },
+    "services": {
+      "disabled": [
+        "WinDefend",
+        "Sense",
+        "WdNisSvc",
+        "MsMpSvc"
+      ],
+      "description": "Windows Defender services to disable during development"
+    }
+  },
+  "scripts": {
+    "disable": "./scripts/disable-defender.ps1",
+    "enable": "./scripts/enable-defender.ps1",
+    "status": "Get-MpPreference | ConvertTo-Json",
+    "check": "Get-Service WinDefend, Sense, WdNisSvc, MsMpSvc | Select-Object Name, Status"
+  },
+  "reminders": {
+    "disable": [
+      "Remember to re-enable Defender after development",
+      "Run './scripts/enable-defender.ps1' when finished",
+      "Restart computer to restore default settings"
+    ],
+    "enable": [
+      "Defender is now fully operational",
+      "System protection has been restored",
+      "Run quick scan to verify everything is working"
+    ]
+  },
+  "notes": {
+    "development": "These settings are optimized for development workflows",
+    "production": "Always re-enable Defender before deploying to production",
+    "security": "Monitor system security while Defender is disabled",
+    "backup": "All changes are logged and can be reverted"
+  }
+}

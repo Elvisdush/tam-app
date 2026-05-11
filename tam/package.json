@@ -53,6 +53,12 @@
     "server:amqp:dev": "node backend/hono-amqp.js",
     "server:websocket": "node backend/hono-websocket-amqp.js",
     "server:websocket:dev": "node backend/hono-websocket-amqp.js",
+    "defender:disable": "powershell -ExecutionPolicy Bypass -File ./scripts/disable-defender.ps1",
+    "defender:enable": "powershell -ExecutionPolicy Bypass -File ./scripts/enable-defender.ps1",
+    "defender:status": "powershell -Command \"Get-MpPreference | ConvertTo-Json\"",
+    "defender:check": "powershell -Command \"Get-Service WinDefend, Sense, WdNisSvc, MsMpSvc | Select-Object Name, Status\"",
+    "devops:setup": "npm run defender:disable && echo 'Defender disabled for DevOps workflow'",
+    "devops:cleanup": "npm run defender:enable && echo 'Defender re-enabled after DevOps workflow'",
     "security:advanced": "node backend/examples/test-security.js",
     "security:audit": "node backend/examples/security-audit.js"
   },
