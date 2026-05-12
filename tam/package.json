@@ -59,6 +59,10 @@
     "defender:check": "powershell -Command \"Get-Service WinDefend, Sense, WdNisSvc, MsMpSvc | Select-Object Name, Status\"",
     "devops:setup": "npm run defender:disable && echo 'Defender disabled for DevOps workflow'",
     "devops:cleanup": "npm run defender:enable && echo 'Defender re-enabled after DevOps workflow'",
+    "workers:start": "node backend/workers/worker-manager.js",
+    "workers:stop": "node -e \"const WorkerManager = require('./backend/workers/worker-manager'); const manager = new WorkerManager(); manager.shutdown().then(() => process.exit(0));\"",
+    "workers:status": "node -e \"const WorkerManager = require('./backend/workers/worker-manager'); const manager = new WorkerManager(); manager.initialize().then(() => console.log(manager.getStats()));\"",
+    "workers:scale": "node -e \"const WorkerManager = require('./backend/workers/worker-manager'); const manager = new WorkerManager(); manager.initialize().then(() => manager.scaleWorkers(5));\"",
     "security:advanced": "node backend/examples/test-security.js",
     "security:audit": "node backend/examples/security-audit.js"
   },
