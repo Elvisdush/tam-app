@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tam-config
+  labels:
+    app.kubernetes.io/name: tam-app
+data:
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  PORT: "3006"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  AMQP_HOST: "rabbitmq"
+  AMQP_PORT: "5672"
+  RATE_LIMIT_WINDOW_MS: "900000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  ENABLE_CACHE: "true"
+  ENABLE_RATE_LIMITING: "true"
+  ENABLE_SECURITY_HEADERS: "true"
+  CLUSTER_WORKERS: "1"
+  CORS_ORIGIN: "http://localhost:3000"

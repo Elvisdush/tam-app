@@ -64,7 +64,10 @@
     "workers:status": "node -e \"const WorkerManager = require('./backend/workers/worker-manager'); const manager = new WorkerManager(); manager.initialize().then(() => console.log(manager.getStats()));\"",
     "workers:scale": "node -e \"const WorkerManager = require('./backend/workers/worker-manager'); const manager = new WorkerManager(); manager.initialize().then(() => manager.scaleWorkers(5));\"",
     "security:advanced": "node backend/examples/test-security.js",
-    "security:audit": "node backend/examples/security-audit.js"
+    "security:audit": "node backend/examples/security-audit.js",
+    "k8s:build": "docker build -f Dockerfile.k8s -t tam-backend:latest .",
+    "k8s:deploy:local": "kubectl apply -f k8s/base/namespace.yaml && kubectl apply -f k8s/base/secrets.yaml && kubectl apply -k k8s/overlays/local",
+    "k8s:status": "kubectl -n tam-app get pods,svc,ingress"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
