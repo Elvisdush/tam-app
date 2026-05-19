@@ -1,14 +1,48 @@
 /**
  * Cache Clear Utility
  * Clear all cache entries or specific patterns
+ * Run from tam/: npm run cache:clear
  */
 
-const { createRedisClient } = require('../config/redis-client');
+require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.env') });
+
+const { createRedisClient, getRedisEndpoint } = require('../config/redis-client');
+
+async function connectRedis(redis) {
+  const { host, port } = getRedisEndpoint();
+  const configured = process.env.REDIS_HOST || 'localhost';
+  if (configured === 'redis' && host === 'localhost') {
+    console.log(`🔌 Connecting to Redis at ${host}:${port} (mapped from REDIS_HOST=redis for local dev)...`);
+  } else {
+    console.log(`🔌 Connecting to Redis at ${host}:${port}...`);
+  }
+
+  const timeoutMs = 10000;
+  await Promise.race([
+    (async () => {
+      await redis.connect();
+      await redis.ping();
+    })(),
+    new Promise((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Redis connection timed out after ${timeoutMs}ms. ` +
+                `Start Redis (e.g. docker compose up -d redis) or set REDIS_HOST=localhost in .env`
+            )
+          ),
+        timeoutMs
+      )
+    ),
+  ]);
+}
 
 async function clearCache(pattern = '*') {
   const redis = createRedisClient();
-  
+
   try {
+    await connectRedis(redis);
     console.log(`🧹 Clearing cache entries matching: ${pattern}`);
     
     // Clear different cache types
@@ -51,8 +85,9 @@ async function clearCache(pattern = '*') {
 
 async function clearSpecificCacheTypes() {
   const redis = createRedisClient();
-  
+
   try {
+    await connectRedis(redis);
     const cacheTypes = [
       { name: 'API Response Cache', pattern: 'cache:*' },
       { name: 'Database Query Cache', pattern: 'db_cache:*' },
