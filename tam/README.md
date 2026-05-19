@@ -259,6 +259,18 @@ npm run security:test
 
 ## 🚀 Deployment
 
+### Kubernetes
+See **[KUBERNETES_DEPLOYMENT.md](./KUBERNETES_DEPLOYMENT.md)** for cluster deploy (backend, Redis, RabbitMQ, Ingress).
+
+```powershell
+# From tam-app/tam — local cluster (minikube / Docker Desktop K8s)
+.\scripts\k8s-deploy.ps1 all
+# Health: http://localhost:30080/health
+```
+
+### Docker Compose
+See **[DOCKER_DEPLOYMENT.md](./DOCKER_DEPLOYMENT.md)** for containerized deploy without Kubernetes.
+
 ### Development Environment
 ```bash
 # Backend server (port 3005)

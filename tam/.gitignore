@@ -34,6 +34,7 @@ yarn-error.*
 .env
 .env.local
 .env*.local
+k8s/base/secrets.yaml
 
 # typescript
 *.tsbuildinfo

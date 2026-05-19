@@ -1,0 +1,29 @@
+# Production image for Kubernetes (backend API only)
+FROM node:20-alpine
+
+RUN apk add --no-cache curl dumb-init
+
+WORKDIR /app
+
+# Install dependencies (uses repo root package.json)
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
+
+COPY backend ./backend
+
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001 && \
+    mkdir -p backend/logs backend/uploads backend/temp && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
+
+ENV NODE_ENV=production
+ENV PORT=3006
+
+EXPOSE 3006
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3006/health || exit 1
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "backend/hono.js"]

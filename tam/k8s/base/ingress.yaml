@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tam-ingress
+  labels:
+    app.kubernetes.io/name: tam-app
+  annotations:
+    # nginx ingress controller (adjust for your ingress class)
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.tam.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tam-backend
+                port:
+                  number: 80
+  # Uncomment for TLS (cert-manager or manual secret)
+  # tls:
+  #   - hosts:
+  #       - api.tam.local
+  #     secretName: tam-api-tls
