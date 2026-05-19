@@ -60,6 +60,11 @@ app.use("/api/sign-in*", rateLimit.auth);
 app.use("/api/sign-up*", rateLimit.auth);
 app.use("/api/otp*", rateLimit.otp);
 
+/** GET probe for auth-tier rate limits (used by backend/test-rate-limit.js). */
+app.get("/api/auth/rate-limit-probe", (c) => {
+  return c.json({ ok: true });
+});
+
 /**
  * Web sign-in OTP: browsers cannot call Twilio directly (CORS). The app POSTs here instead.
  * Set EXPO_PUBLIC_API_BASE_URL (e.g. http://localhost:3000) in the Expo app .env when using web.
