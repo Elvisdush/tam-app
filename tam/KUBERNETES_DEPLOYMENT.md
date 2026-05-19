@@ -192,10 +192,36 @@ spec:
           averageUtilization: 70
 ```
 
+## Static analysis (Checkov / Guardian)
+
+Checkov’s **kustomize** runner extracts manifests under `%TEMP%` and renames temp files. On **Windows** (including some CI agents under `RUNNER~1`), parallel workers plus antivirus or filesystem locking often trigger:
+
+`PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`
+
+That failure can cascade into a bogus `NameError: name 'exit' is not defined` inside Checkov’s own error path.
+
+**Recommended fixes (pick one):**
+
+1. **Render then scan as plain Kubernetes YAML** (works on Windows):
+
+   From `tam-app/tam`:
+
+   ```bash
+   npm run k8s:render
+   checkov --framework kubernetes -f k8s/rendered/local.yaml
+   ```
+
+   Ensure Checkov is **not** pointed at a directory that contains `kustomization.yaml`, or it may enable the kustomize runner again.
+
+2. **Run the scan on Linux** (e.g. `ubuntu-latest` in GitHub Actions): the rename race is far less common than on Windows.
+
+3. **Exclude the kustomize framework** in your Guardian / pipeline config if it offers framework toggles, and only scan rendered YAML or `k8s/base/*.yaml` with `--framework kubernetes`.
+
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
+| Checkov `WinError 32` on kustomize | Use `npm run k8s:render` + `checkov --framework kubernetes -f k8s/rendered/local.yaml`, or Linux runner |
 | `ImagePullBackOff` | Build & load image into cluster (`minikube image load`) |
 | Backend `CrashLoopBackOff` | `kubectl -n tam-app logs deployment/tam-backend` |
 | Redis auth errors | Ensure `REDIS_PASSWORD` in Secret matches Redis container |

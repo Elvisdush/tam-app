@@ -67,6 +67,7 @@
     "security:audit": "node backend/examples/security-audit.js",
     "k8s:build": "docker build -f Dockerfile.k8s -t tam-backend:latest .",
     "k8s:deploy:local": "kubectl apply -f k8s/base/namespace.yaml && kubectl apply -f k8s/base/secrets.yaml && kubectl apply -k k8s/overlays/local",
+    "k8s:render": "node scripts/render-kustomize.js",
     "k8s:status": "kubectl -n tam-app get pods,svc,ingress"
   },
   "dependencies": {

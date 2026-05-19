@@ -36,6 +36,9 @@ yarn-error.*
 .env*.local
 k8s/base/secrets.yaml
 
+# Flattened manifests from npm run k8s:render (for Checkov / CI)
+k8s/rendered/*.yaml
+
 # typescript
 *.tsbuildinfo
 .vercel
