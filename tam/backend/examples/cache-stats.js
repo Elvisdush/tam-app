@@ -1,14 +1,48 @@
 /**
  * Cache Statistics Utility
  * Monitor and analyze cache performance
+ * Run from tam/: npm run cache:stats
  */
 
-const { createRedisClient } = require('../config/redis-client');
+require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.env') });
+
+const { createRedisClient, getRedisEndpoint } = require('../config/redis-client');
+
+async function connectRedis(redis) {
+  const { host, port } = getRedisEndpoint();
+  const configured = process.env.REDIS_HOST || 'localhost';
+  if (configured === 'redis' && host === 'localhost') {
+    console.log(`🔌 Connecting to Redis at ${host}:${port} (mapped from REDIS_HOST=redis for local dev)...`);
+  } else {
+    console.log(`🔌 Connecting to Redis at ${host}:${port}...`);
+  }
+
+  const timeoutMs = 10000;
+  await Promise.race([
+    (async () => {
+      await redis.connect();
+      await redis.ping();
+    })(),
+    new Promise((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Redis connection timed out after ${timeoutMs}ms. ` +
+                `Start Redis (e.g. docker compose up -d redis) or set REDIS_HOST=localhost in .env`
+            )
+          ),
+        timeoutMs
+      )
+    ),
+  ]);
+}
 
 async function getCacheStats() {
   const redis = createRedisClient();
-  
+
   try {
+    await connectRedis(redis);
     // Get all cache keys
     const apiKeys = await redis.keys('cache:*');
     const dbKeys = await redis.keys('db_cache:*');
@@ -50,10 +84,18 @@ async function getCacheStats() {
     
     return stats;
   } catch (error) {
-    console.error('❌ Failed to get cache stats:', error);
+    console.error('❌ Failed to get cache stats:', error.message || error);
     return null;
   } finally {
-    await redis.quit();
+    try {
+      if (redis.isOpen) {
+        await redis.quit();
+      } else {
+        await redis.disconnect();
+      }
+    } catch {
+      // ignore quit errors after failed connect
+    }
   }
 }
 

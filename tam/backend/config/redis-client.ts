@@ -3,34 +3,82 @@
  * For distributed rate limiting and session storage
  */
 
-import { createClient, RedisClient } from 'redis';
+import { existsSync } from 'fs';
+import { createClient, type RedisClientType } from 'redis';
 
 interface RedisConfig {
   host?: string;
   port?: number;
   password?: string;
   db?: number;
-  keyPrefix?: string;
 }
 
-const createRedisClient = (config: RedisConfig = {}) => {
-  const redisConfig = {
-    host: config.host || process.env.REDIS_HOST || 'localhost',
-    port: config.port || parseInt(process.env.REDIS_PORT || '6379'),
-    password: config.password || process.env.REDIS_PASSWORD,
-    db: config.db || parseInt(process.env.REDIS_DB || '0'),
-    keyPrefix: config.keyPrefix || 'tam_app:',
-    retryDelayOnFailover: 100,
-    maxRetriesPerRequest: 3,
-    lazyConnect: true,
-    keepAlive: 30000,
-    connectTimeout: 10000,
-    commandTimeout: 5000,
+const PLACEHOLDER_PASSWORDS = new Set([
+  'your_redis_password_here',
+  'your_secure_redis_password',
+  'changeme',
+]);
+
+function resolveRedisPassword(config: RedisConfig): string | undefined {
+  const raw = config.password ?? process.env.REDIS_PASSWORD;
+  if (!raw || PLACEHOLDER_PASSWORDS.has(raw)) {
+    return undefined;
+  }
+  return raw;
+}
+
+/** Docker Compose service name; only resolvable inside the compose network. */
+function isRunningInDocker(): boolean {
+  return (
+    process.env.DOCKER === 'true' ||
+    process.env.RUNNING_IN_DOCKER === 'true' ||
+    existsSync('/.dockerenv')
+  );
+}
+
+function resolveRedisHost(config: RedisConfig): string {
+  const configured = config.host ?? process.env.REDIS_HOST ?? 'localhost';
+  // .env often uses REDIS_HOST=redis for Docker; on the host machine use localhost.
+  if (configured === 'redis' && !isRunningInDocker()) {
+    return 'localhost';
+  }
+  return configured;
+}
+
+function getRedisEndpoint(config: RedisConfig = {}) {
+  return {
+    host: resolveRedisHost(config),
+    port: config.port ?? parseInt(process.env.REDIS_PORT || '6379', 10),
   };
+}
 
-  const client: RedisClient = Redis.createClient(redisConfig);
+const createRedisClient = (config: RedisConfig = {}): RedisClientType => {
+  const host = resolveRedisHost(config);
+  const port = config.port || parseInt(process.env.REDIS_PORT || '6379', 10);
+  const password = resolveRedisPassword(config);
+  const database = config.db ?? parseInt(process.env.REDIS_DB || '0', 10);
 
-  // Connection event handlers
+  const client = createClient({
+    socket: {
+      host,
+      port,
+      connectTimeout: 10000,
+      reconnectStrategy: (retries, cause) => {
+        const err = cause as NodeJS.ErrnoException | undefined;
+        if (err?.code === 'ENOTFOUND' || err?.code === 'ECONNREFUSED') {
+          return false;
+        }
+        if (retries > 2) {
+          return false;
+        }
+        return Math.min(retries * 200, 1000);
+      },
+    },
+    password,
+    database,
+    disableOfflineQueue: true,
+  });
+
   client.on('connect', () => {
     console.log('✅ Redis connected successfully');
   });
@@ -50,4 +98,4 @@ const createRedisClient = (config: RedisConfig = {}) => {
   return client;
 };
 
-export { createRedisClient, type RedisConfig };
+export { createRedisClient, getRedisEndpoint, type RedisConfig };
