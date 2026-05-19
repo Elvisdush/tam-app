@@ -217,6 +217,8 @@ That failure can cascade into a bogus `NameError: name 'exit' is not defined` in
 
 3. **Exclude the kustomize framework** in your Guardian / pipeline config if it offers framework toggles, and only scan rendered YAML or `k8s/base/*.yaml` with `--framework kubernetes`.
 
+For **Microsoft Defender for DevOps / Guardian** (Azure DevOps or GitHub), see **[docs/GUARDIAN_MSDO_CHECKOV.md](./docs/GUARDIAN_MSDO_CHECKOV.md)** — use `GDN_CHECKOV_SKIPFRAMEWORK=kustomize` or run MSDO on **Linux**.
+
 ## Troubleshooting
 
 | Issue | Fix |
