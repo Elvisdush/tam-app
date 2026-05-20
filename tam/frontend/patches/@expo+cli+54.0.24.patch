@@ -1,0 +1,19 @@
+diff --git a/node_modules/@expo/cli/build/src/api/rest/cache/wrapFetchWithCache.js b/node_modules/@expo/cli/build/src/api/rest/cache/wrapFetchWithCache.js
+index daad31c..fa851f1 100644
+--- a/node_modules/@expo/cli/build/src/api/rest/cache/wrapFetchWithCache.js
++++ b/node_modules/@expo/cli/build/src/api/rest/cache/wrapFetchWithCache.js
+@@ -36,9 +36,13 @@ function wrapFetchWithCache(fetch, cache) {
+             if (!response.ok || !response.body) {
+                 return response;
+             }
++            // FileSystemResponseCache uses body.tee(); if we pass the original stream, it is consumed.
++            // When cache reconstruction fails, the code previously returned this same Response — then
++            // callers hit "Body is unusable: Body has already been read". Clone before caching.
++            const responseForCache = response.clone();
+             // Cache the response
+             cachedResponse = await cache.set(cacheKey, {
+-                body: response.body,
++                body: responseForCache.body,
+                 info: (0, _ResponseCache.getResponseInfo)(response)
+             });
+             // Warn through debug logs that caching failed

@@ -3,6 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "main": "expo-router/entry",
+  "scripts": {
+    "postinstall": "patch-package",
+    "start": "npx expo start",
+    "expo:start:lan": "node scripts/expo-start-lan.js",
+    "expo:start:web": "node scripts/expo-start-web.js",
+    "expo:start:web:clear": "node scripts/expo-start-web.js -c"
+  },
   "dependencies": {
     "@expo/vector-icons": "~14.0.4",
     "copy-anything": "^4.0.5",
@@ -10,6 +17,7 @@
     "expo-router": "~6.0.23"
   },
   "devDependencies": {
-    "metro": "^0.83.7"
+    "metro": "^0.83.7",
+    "patch-package": "^8.0.1"
   }
 }

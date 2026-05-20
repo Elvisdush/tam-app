@@ -126,6 +126,16 @@ npx expo start --offline
 # → Scan QR code for mobile
 ```
 
+**LAN + phone (`fetch failed` without `--offline`):** Expo still calls Expo’s servers for dependency validation. From **repo root** or **`frontend/`**:
+
+```bash
+npm run expo:start:lan
+```
+
+(On macOS/Linux: `cd frontend && EXPO_NO_DEPENDENCY_VALIDATION=1 npx expo start --lan`.)
+
+Or manually: `npx expo start --lan --offline`.
+
 ## �️ Development Workflow
 
 ### Project Structure Deep Dive
@@ -395,9 +405,22 @@ npx tsc --noEmit -p frontend/tsconfig.json
 
 - **`import.meta` on web:** `frontend/babel.config.js` enables `unstable_transformImportMeta` in `babel-preset-expo` so the web bundle runs in a non-module script context.
 
-- **Expo CLI network errors:** If startup fails on `getNativeModuleVersions`, use `npm run expo:start:web:offline` or set `EXPO_NO_DEPENDENCY_VALIDATION=1`.
+- **Expo CLI network errors (`fetch failed`, `getVersionsAsync`):** Expo still validates dependencies against the network unless you disable it. Use **`npm run expo:start:lan`** or **`npm run expo:start:web`** from **`frontend/`** (or matching scripts from repo root — both set **`EXPO_NO_DEPENDENCY_VALIDATION=1`** via launcher scripts). Alternatives: **`npx expo start --web --offline`**, **`npm run expo:start:web:offline`** (repo root). Prefer **Node 20 LTS** if errors persist on Node 22+.
+
+- **`Body is unusable: Body has already been read` (@expo/cli):** Comes from disk response caching tee’ing the **same** fetch `Response` body; if cache reconstruction fails, the CLI could return that consumed response. This repo ships **`frontend/patches/@expo+cli+54.0.24.patch`** — applied via **`patch-package`** on **`frontend`** `postinstall` and from the repo-root **`postinstall`** helper. Workaround without patching: **`EXPO_NO_CACHE=1`** (disables that cache layer).
+
+- **Web / Metro crash (`empty path ... JSC-safe format`):** Fast Refresh sometimes registers **`http://localhost:8082/?platform=web`** (path `/`), which **`jsc-safe-url`** used to reject. Patched via **`frontend/patches/jsc-safe-url+0.2.4.patch`** (applied with `@expo/cli` patches).
 
 - **Windows + Metro:** `frontend/metro.config.js` excludes other platforms’ `@expo/ngrok-bin-*` packages from the file map to avoid `ENOENT` watch errors on optional darwin/linux folders.
+
+- **Slow web / Metro “scanning” for a long time:** The repo often lives under **OneDrive** (`OneDrive\Desktop\...`). Sync + antivirus scanning that folder makes Metro’s first crawl and rebuilds much slower. Prefer cloning to a **non-OneDrive path** (e.g. `C:\dev\waze`) or pause sync on this folder while developing. The first bundle after `expo start -c` is always slower.
+
+- **Expo Go on phone won’t load:** Phone and PC must be on the **same Wi‑Fi** (or use **tunnel**). On Windows, allow **Node.js** through the firewall for **Private** networks. Start with LAN explicitly:
+  ```bash
+  cd frontend
+  npx expo start --lan
+  ```
+  If LAN is blocked (guest Wi‑Fi, corporate AP isolation), drop **`--offline`** and use a tunnel (needs internet): `npx expo start --tunnel`. Tunnel does **not** work with `--offline`. Match **Expo Go** on the phone to **SDK 54** (same major as `expo` in the root `package.json`).
 
 ## Google OAuth (web)
 

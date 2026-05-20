@@ -1,0 +1,23 @@
+diff --git a/node_modules/jsc-safe-url/index.js b/node_modules/jsc-safe-url/index.js
+--- a/node_modules/jsc-safe-url/index.js
++++ b/node_modules/jsc-safe-url/index.js
+@@ -69,11 +69,17 @@ function toJscSafeUrl(urlToConvert /*:string */) /*:string */ {
+   const parsedUrl = _rfc3986Parse(toNormalUrl(urlToConvert));
+   if (
+     parsedUrl.queryWithoutQuestionMark.length > 0 &&
+     (parsedUrl.path === "" || parsedUrl.path === "/")
+   ) {
+-    throw new Error(
+-      `The given URL "${urlToConvert}" has an empty path and cannot be converted to a JSC-safe format.`
++    // Metro web HMR may send e.g. http://localhost:8082/?platform=web (path is only "/").
++    // Encode as "/." so query can be moved into JSC-safe "//&" form (same as non-root paths).
++    return (
++      parsedUrl.schemeAndAuthority +
++      "/." +
++      "//&" +
++      parsedUrl.queryWithoutQuestionMark.replace(/\?/g, "%3F") +
++      parsedUrl.fragmentWithHash
+     );
+   }
+   return (
+     parsedUrl.schemeAndAuthority +
