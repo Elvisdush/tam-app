@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, usePathname, router } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/auth-store";
 import { useChatStore } from "@/store/chat-store";
 import { useRideStore } from "@/store/ride-store";
 import { useRoadHazardsStore } from "@/store/road-hazards-store";
+import { isAuthRoute, isPublicRoute } from "@/constants/auth-public-routes";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -23,7 +24,6 @@ export default function RootLayout() {
 
     async function prepare() {
       try {
-        // Load stores with timeout protection
         await Promise.all([
           Promise.race([loadUsers(), new Promise(resolve => setTimeout(resolve, 2000))]),
           Promise.race([loadMessages(), new Promise(resolve => setTimeout(resolve, 2000))]),
@@ -32,17 +32,12 @@ export default function RootLayout() {
       } catch (error) {
         console.warn('Store loading timeout or error:', error);
       }
-      
+
       try {
         const g = globalThis as typeof globalThis & { __authStore?: { getState: () => { user: unknown } } };
         g.__authStore = { getState: () => ({ user: useAuthStore.getState().user }) };
       } catch {
         /* dev helpers only — must not break native */
-      }
-      // Keep native splash visible long enough to read logo (see app.json splash.image)
-      await new Promise((r) => setTimeout(r, 500));
-      if (!cancelled) {
-        await SplashScreen.hideAsync().catch(() => {});
       }
     }
 
@@ -65,6 +60,57 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
+  const pathname = usePathname();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const user = useAuthStore((state) => state.user);
+  const [authHydrated, setAuthHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+
+  useEffect(() => {
+    if (useAuthStore.persist.hasHydrated()) {
+      setAuthHydrated(true);
+      return;
+    }
+    return useAuthStore.persist.onFinishHydration(() => {
+      setAuthHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!authHydrated) return;
+
+    let cancelled = false;
+    async function hideSplash() {
+      await new Promise((r) => setTimeout(r, 500));
+      if (!cancelled) {
+        await SplashScreen.hideAsync().catch(() => {});
+      }
+    }
+
+    void hideSplash();
+    return () => {
+      cancelled = true;
+    };
+  }, [authHydrated]);
+
+  useEffect(() => {
+    if (!authHydrated) return;
+
+    const signedIn = isAuthenticated && !!user;
+
+    if (signedIn && isAuthRoute(pathname)) {
+      router.replace('/home');
+      return;
+    }
+
+    if (!signedIn && !isPublicRoute(pathname)) {
+      router.replace('/');
+    }
+  }, [authHydrated, pathname, isAuthenticated, user]);
+
+  if (!authHydrated) {
+    return null;
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
