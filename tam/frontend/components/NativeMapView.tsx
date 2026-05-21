@@ -1,8 +1,9 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useMemo } from 'react';
 import { StyleSheet, Platform, View, Text } from 'react-native';
-import MapView, { Marker, Callout, Circle, type EdgePadding } from 'react-native-maps';
-import { Car, Bike } from 'lucide-react-native';
+import MapView, { Marker, Callout, Circle, Polyline, type EdgePadding } from 'react-native-maps';
+import { Car, Bike, MapPin } from 'lucide-react-native';
 import type { OnlineDriverMarker } from '@/types/online-driver';
+import { decodePolyline } from '@/lib/navigation/polyline';
 
 interface Location {
   latitude: number;
@@ -12,14 +13,29 @@ interface Location {
   accuracyMeters?: number;
 }
 
+export interface NativeMapRouteOverlay {
+  polyline: string;
+  distance?: string;
+  duration?: string;
+}
+
 export interface NativeMapViewProps {
   currentLocation: Location | null;
+  /** When set, pickup pin uses this instead of currentLocation (manual / map tap). */
+  pickupLocation?: Location | null;
+  /** Trip destination marker + route endpoint */
+  destinationLocation?: { latitude: number; longitude: number; label?: string } | null;
+  routeOverlay?: NativeMapRouteOverlay | null;
   /** Drivers using the app nearby (real + optional demo) */
   nearbyDrivers?: OnlineDriverMarker[];
   /** Passenger taps a driver marker — opens booking flow on Home */
   onDriverPress?: (driver: OnlineDriverMarker) => void;
-  /** Shown on pickup bubble when > 0 (e.g. “3 nearby”) */
+  /** Shown on pickup bubble when > 0 (e.g. “3 nearby”) — hidden when pickupEtaLabel is set */
   userNearbyDriverCount?: number;
+  /** Trip ETA on pickup bubble (e.g. “18 min”) */
+  pickupEtaLabel?: string | null;
+  /** Tap map to choose pickup (Home passenger flow) */
+  onMapPress?: (coord: { latitude: number; longitude: number }) => void;
   /** Keeps your pin in the visible area above bottom sheets / chrome */
   mapPadding?: EdgePadding;
 }
@@ -28,127 +44,196 @@ const DEFAULT_LAT = -1.9441;
 const DEFAULT_LNG = 30.0619;
 
 const NativeMapView = forwardRef<MapView, NativeMapViewProps>(function NativeMapView(
-  { currentLocation, nearbyDrivers = [], onDriverPress, userNearbyDriverCount = 0, mapPadding },
+  {
+    currentLocation,
+    pickupLocation,
+    destinationLocation,
+    routeOverlay,
+    nearbyDrivers = [],
+    onDriverPress,
+    userNearbyDriverCount = 0,
+    pickupEtaLabel,
+    onMapPress,
+    mapPadding,
+  },
   ref
 ) {
-  const acc = currentLocation?.accuracyMeters;
+  const pinLocation = pickupLocation ?? currentLocation;
+
+  const routeCoordinates = useMemo(() => {
+    if (!routeOverlay || !pinLocation || !destinationLocation) return [];
+    if (routeOverlay.polyline && routeOverlay.polyline !== 'simulated_polyline_data') {
+      try {
+        const coords = decodePolyline(routeOverlay.polyline);
+        if (coords.length >= 2) return coords;
+      } catch {
+        /* fall through */
+      }
+    }
+    return [
+      { latitude: pinLocation.latitude, longitude: pinLocation.longitude },
+      { latitude: destinationLocation.latitude, longitude: destinationLocation.longitude },
+    ];
+  }, [
+    routeOverlay?.polyline,
+    pinLocation?.latitude,
+    pinLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+  ]);
+
+  const acc = pinLocation?.accuracyMeters;
   const circleRadius =
     typeof acc === 'number' && Number.isFinite(acc) && acc > 0
       ? Math.min(Math.max(acc, 10), 450)
       : null;
 
+  const bubbleLabel =
+    pickupEtaLabel?.trim() ||
+    (userNearbyDriverCount > 0 ? `${userNearbyDriverCount} NEARBY` : null);
+
   return (
     <View style={styles.mapWrap}>
       <MapView
-      ref={ref}
-      style={styles.map}
-      initialRegion={{
-        latitude: DEFAULT_LAT,
-        longitude: DEFAULT_LNG,
-        latitudeDelta: 0.045,
-        longitudeDelta: 0.045,
-      }}
-      {...(Platform.OS === 'web' && { googleMapsApiKey: 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U' })}
-      mapPadding={mapPadding}
-      showsUserLocation={false}
-      showsMyLocationButton={false}
-      rotateEnabled
-      pitchEnabled={false}
-      customMapStyle={
-        /** Google Maps JSON styles only — iOS Apple Maps rejects them and can red-screen. */
-        Platform.OS === 'android'
-          ? [
-              { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
-              { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-              { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
-              { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
-            ]
-          : undefined
-      }
-    >
-      {currentLocation && circleRadius != null && (
-        <Circle
-          center={{
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-          }}
-          radius={circleRadius}
-          fillColor="rgba(37, 99, 235, 0.14)"
-          strokeColor="rgba(29, 78, 216, 0.55)"
-          strokeWidth={1.5}
-        />
-      )}
-      {currentLocation && (
-        <Marker
-          coordinate={{
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-          }}
-          anchor={{ x: 0.5, y: 0.5 }}
-        >
-          <View style={styles.pickupColumn}>
-            {userNearbyDriverCount > 0 && (
-              <View style={styles.etaBubble}>
-                <Text style={styles.etaBubbleText}>
-                  {userNearbyDriverCount} NEARBY
-                </Text>
-              </View>
-            )}
-            <View style={styles.pickupPulseOuter}>
-              <View style={styles.pickupPulseInner}>
-                <View style={styles.pickupDot} />
+        ref={ref}
+        style={styles.map}
+        initialRegion={{
+          latitude: DEFAULT_LAT,
+          longitude: DEFAULT_LNG,
+          latitudeDelta: 0.045,
+          longitudeDelta: 0.045,
+        }}
+        {...(Platform.OS === 'web' && { googleMapsApiKey: 'AIzaSyCEmqLGnM67YcXjxkfbJaOICB3-dodxj4U' })}
+        mapPadding={mapPadding}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        rotateEnabled
+        pitchEnabled={false}
+        onPress={
+          onMapPress
+            ? (e) => onMapPress(e.nativeEvent.coordinate)
+            : undefined
+        }
+        customMapStyle={
+          /** Google Maps JSON styles only — iOS Apple Maps rejects them and can red-screen. */
+          Platform.OS === 'android'
+            ? [
+                { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+                { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+                { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+                { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
+              ]
+            : undefined
+        }
+      >
+        {routeCoordinates.length >= 2 && (
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor="#2563eb"
+            strokeWidth={5}
+            lineCap="round"
+            lineJoin="round"
+          />
+        )}
+
+        {pinLocation && circleRadius != null && (
+          <Circle
+            center={{
+              latitude: pinLocation.latitude,
+              longitude: pinLocation.longitude,
+            }}
+            radius={circleRadius}
+            fillColor="rgba(37, 99, 235, 0.14)"
+            strokeColor="rgba(29, 78, 216, 0.55)"
+            strokeWidth={1.5}
+          />
+        )}
+        {pinLocation && (
+          <Marker
+            coordinate={{
+              latitude: pinLocation.latitude,
+              longitude: pinLocation.longitude,
+            }}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={styles.pickupColumn}>
+              {bubbleLabel ? (
+                <View style={styles.etaBubble}>
+                  <Text style={styles.etaBubbleText}>{bubbleLabel}</Text>
+                </View>
+              ) : null}
+              <View style={styles.pickupPulseOuter}>
+                <View style={styles.pickupPulseInner}>
+                  <View style={styles.pickupDot} />
+                </View>
               </View>
             </View>
-          </View>
-        </Marker>
-      )}
-      {nearbyDrivers.map((d) => (
-        <Marker
-          key={d.userId}
-          coordinate={{ latitude: d.latitude, longitude: d.longitude }}
-          anchor={{ x: 0.5, y: 1 }}
-          onPress={() => onDriverPress?.(d)}
-        >
-          <View style={styles.markerColumn}>
-            {d.vehiclePlate?.trim() ? (
-              <Text style={styles.plateTag} numberOfLines={1}>
-                {d.vehiclePlate.trim()}
-              </Text>
-            ) : null}
-            <View
-              style={[
-                styles.driverPin,
-                d.transportType === 'car' ? styles.driverPinCar : styles.driverPinMoto,
-              ]}
-            >
-              {d.transportType === 'car' ? (
-                <Car color="#fff" size={16} strokeWidth={2.5} />
-              ) : (
-                <Bike color="#fff" size={16} strokeWidth={2.5} />
-              )}
+          </Marker>
+        )}
+
+        {destinationLocation && (
+          <Marker
+            coordinate={{
+              latitude: destinationLocation.latitude,
+              longitude: destinationLocation.longitude,
+            }}
+            anchor={{ x: 0.5, y: 1 }}
+          >
+            <View style={styles.destColumn}>
+              <View style={styles.destPin}>
+                <MapPin color="#fff" size={18} strokeWidth={2.5} />
+              </View>
             </View>
-          </View>
-          <Callout onPress={() => onDriverPress?.(d)}>
-            <View style={styles.calloutBox}>
-              <Text style={styles.calloutTitle}>
-                {d.transportType === 'motorbike' ? 'Taxi moto' : 'Taxi car'}
-                {d.isDemo ? ' · Demo' : ''}
-              </Text>
-              <Text style={styles.calloutLine}>{d.username ?? 'Driver'}</Text>
-              <Text style={styles.calloutPlate}>
-                Plate: {d.vehiclePlate?.trim() || '—'}
-              </Text>
-              {d.vehicleModel?.trim() ? (
-                <Text style={styles.calloutLine} numberOfLines={2}>
-                  {d.vehicleModel.trim()}
+          </Marker>
+        )}
+
+        {nearbyDrivers.map((d) => (
+          <Marker
+            key={d.userId}
+            coordinate={{ latitude: d.latitude, longitude: d.longitude }}
+            anchor={{ x: 0.5, y: 1 }}
+            onPress={() => onDriverPress?.(d)}
+          >
+            <View style={styles.markerColumn}>
+              {d.vehiclePlate?.trim() ? (
+                <Text style={styles.plateTag} numberOfLines={1}>
+                  {d.vehiclePlate.trim()}
                 </Text>
               ) : null}
-              <Text style={styles.calloutHint}>Tap for driver details</Text>
+              <View
+                style={[
+                  styles.driverPin,
+                  d.transportType === 'car' ? styles.driverPinCar : styles.driverPinMoto,
+                ]}
+              >
+                {d.transportType === 'car' ? (
+                  <Car color="#fff" size={16} strokeWidth={2.5} />
+                ) : (
+                  <Bike color="#fff" size={16} strokeWidth={2.5} />
+                )}
+              </View>
             </View>
-          </Callout>
-        </Marker>
-      ))}
-    </MapView>
+            <Callout onPress={() => onDriverPress?.(d)}>
+              <View style={styles.calloutBox}>
+                <Text style={styles.calloutTitle}>
+                  {d.transportType === 'motorbike' ? 'Taxi moto' : 'Taxi car'}
+                  {d.isDemo ? ' · Demo' : ''}
+                </Text>
+                <Text style={styles.calloutLine}>{d.username ?? 'Driver'}</Text>
+                <Text style={styles.calloutPlate}>
+                  Plate: {d.vehiclePlate?.trim() || '—'}
+                </Text>
+                {d.vehicleModel?.trim() ? (
+                  <Text style={styles.calloutLine} numberOfLines={2}>
+                    {d.vehicleModel.trim()}
+                  </Text>
+                ) : null}
+                <Text style={styles.calloutHint}>Tap for driver details</Text>
+              </View>
+            </Callout>
+          </Marker>
+        ))}
+      </MapView>
     </View>
   );
 });
@@ -167,6 +252,24 @@ const styles = StyleSheet.create({
   },
   pickupColumn: {
     alignItems: 'center',
+  },
+  destColumn: {
+    alignItems: 'center',
+  },
+  destPin: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#16a34a',
+    borderWidth: 3,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
   etaBubble: {
     marginBottom: 8,

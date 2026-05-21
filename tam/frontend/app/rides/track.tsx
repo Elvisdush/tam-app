@@ -248,6 +248,7 @@ export default function RideTrackScreen() {
         const driverPos = ride.driverLocation;
         if (!driverPos) {
           setRouteToPickup(null);
+          setRouteToDropoff(null);
           return;
         }
         const route = await calculateRoute(
@@ -257,6 +258,24 @@ export default function RideTrackScreen() {
         );
         if (cancelled || !route) return;
         setRouteToPickup({ distance: route.distance, duration: route.duration });
+
+        if (ride.dropoffLocation) {
+          const dropRoute = await calculateRoute(
+            { ...currentLocation, timestamp: '' },
+            {
+              latitude: ride.dropoffLocation.latitude,
+              longitude: ride.dropoffLocation.longitude,
+              timestamp: '',
+              address: ride.to,
+            },
+            { persistToStore: false }
+          );
+          if (!cancelled && dropRoute) {
+            setRouteToDropoff({ distance: dropRoute.distance, duration: dropRoute.duration });
+          }
+        } else {
+          setRouteToDropoff(null);
+        }
       }
     };
 

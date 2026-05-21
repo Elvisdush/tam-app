@@ -12,6 +12,8 @@ type DriverSuggestion = {
   name: string;
   subtitle: string;
   search: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 type Props = {
