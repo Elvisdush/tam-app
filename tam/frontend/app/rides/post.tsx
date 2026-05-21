@@ -12,7 +12,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ChevronLeft, MapPin, Navigation, Coins, CarFront, Bike, CircleCheck } from 'lucide-react-native';
+import {
+  ChevronLeft,
+  MapPin,
+  Navigation,
+  Coins,
+  CarFront,
+  Bike,
+  CircleCheck,
+  Sparkles,
+  ArrowRight,
+} from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
@@ -24,14 +34,20 @@ import { useLocationStore } from '@/store/location-store';
 import { TransportTypeSelector } from '@/components/TransportTypeSelector';
 import { DriverRwandaSuggestList } from '@/components/DriverRwandaSuggestList';
 
+/** Matches tab bar & primary actions across the app */
+const BRAND = '#3498db';
+const BRAND_DEEP = '#2980b9';
+const TEXT_MAIN = '#0f172a';
+const TEXT_MUTED = '#64748b';
+
 export default function PostRideScreen() {
   const navigation = useNavigation();
-  const user = useAuthStore(state => state.user);
-  const addRide = useRideStore(state => state.addRide);
-  const lastSearchParams = useRideStore(state => state.lastSearchParams);
-  const currentLocation = useLocationStore(state => state.currentLocation);
-  const startLocationTracking = useLocationStore(state => state.startLocationTracking);
-  
+  const user = useAuthStore((state) => state.user);
+  const addRide = useRideStore((state) => state.addRide);
+  const lastSearchParams = useRideStore((state) => state.lastSearchParams);
+  const currentLocation = useLocationStore((state) => state.currentLocation);
+  const startLocationTracking = useLocationStore((state) => state.startLocationTracking);
+
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [price, setPrice] = useState('');
@@ -41,14 +57,15 @@ export default function PostRideScreen() {
   const [suggestField, setSuggestField] = useState<'from' | 'to' | null>(null);
 
   const priceNumber = useMemo(() => Number(price), [price]);
-  const isFormValid = from.trim().length > 1 && to.trim().length > 1 && Number.isFinite(priceNumber) && priceNumber > 0;
+  const isFormValid =
+    from.trim().length > 1 && to.trim().length > 1 && Number.isFinite(priceNumber) && priceNumber > 0;
 
   useEffect(() => {
     return () => {
       setSuggestField(null);
     };
   }, []);
-  
+
   useEffect(() => {
     if (lastSearchParams) {
       setFrom(lastSearchParams.from);
@@ -68,7 +85,7 @@ export default function PostRideScreen() {
     const getCurrencyAndLocation = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        
+
         if (status === 'granted') {
           const location = await Location.getCurrentPositionAsync({});
           const { latitude, longitude } = location.coords;
@@ -109,10 +126,10 @@ export default function PostRideScreen() {
         setPricePlaceholder('Price');
       }
     };
-    
+
     getCurrencyAndLocation();
   }, []);
-  
+
   const handlePost = async () => {
     if (!from.trim() || !to.trim()) {
       Alert.alert('Missing route', 'Please enter both From and To locations.');
@@ -155,45 +172,71 @@ export default function PostRideScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <StatusBar style="light" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-              <ChevronLeft color="#0f172a" size={24} />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Top bar */}
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.backButton} onPress={handleBack} accessibilityLabel="Go back">
+              <ChevronLeft color="#fff" size={26} />
             </TouchableOpacity>
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.headerTitle}>Post a Ride</Text>
-              <Text style={styles.headerSubtitle}>Share your trip and get matched quickly</Text>
+          </View>
+
+          {/* Hero — quick to scan, high contrast */}
+          <View style={styles.hero}>
+            <View style={styles.heroBadge}>
+              <Sparkles color="#fff" size={16} />
+              <Text style={styles.heroBadgeText}>Visible to nearby drivers</Text>
+            </View>
+            <Text style={styles.heroTitle}>Post your ride</Text>
+            <Text style={styles.heroSubtitle}>
+              Set pickup → drop-off → fair price. Drivers nearby can accept in seconds.
+            </Text>
+          </View>
+
+          {/* Visual route strip */}
+          <View style={styles.routeVisual}>
+            <View style={styles.routeDot}>
+              <MapPin color={BRAND} size={18} />
+            </View>
+            <View style={styles.routeLine} />
+            <View style={styles.routeDot}>
+              <Navigation color={BRAND_DEEP} size={18} />
             </View>
           </View>
 
-          <View style={styles.formContainer}>
+          <View style={styles.sheet}>
             <View style={styles.card}>
-              <Text style={styles.cardHeading}>Transport</Text>
-              <TransportTypeSelector selected={transportType} onSelect={setTransportType} />
-              <View style={styles.modeHintRow}>
+              <Text style={styles.cardTitle}>Vehicle</Text>
+              <View style={styles.cardHintRow}>
                 {transportType === 'car' ? (
-                  <CarFront color="#2563eb" size={16} />
+                  <CarFront color={BRAND} size={16} />
                 ) : (
-                  <Bike color="#0d9488" size={16} />
+                  <Bike color="#16a085" size={16} />
                 )}
-                <Text style={styles.modeHintText}>
-                  {transportType === 'car' ? 'Taxi car ride posting' : 'Taxi moto ride posting'}
+                <Text style={styles.cardHintText}>
+                  {transportType === 'car'
+                    ? 'Taxi car — more space & comfort'
+                    : 'Taxi moto — fast in traffic'}
                 </Text>
               </View>
+              <TransportTypeSelector selected={transportType} onSelect={setTransportType} />
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.cardHeading}>Trip details</Text>
+              <Text style={styles.cardTitle}>Route & price</Text>
 
-              <Text style={styles.inputLabel}>From</Text>
+              <Text style={styles.fieldLabel}>From</Text>
               <View style={styles.inputWrap}>
-                <MapPin color="#64748b" size={18} />
+                <MapPin color={BRAND} size={20} />
                 <TextInput
                   style={styles.input}
                   placeholder="Pickup area"
@@ -201,7 +244,9 @@ export default function PostRideScreen() {
                   value={from}
                   onChangeText={setFrom}
                   onFocus={() => setSuggestField('from')}
-                  onBlur={() => setTimeout(() => setSuggestField((f) => (f === 'from' ? null : f)), 120)}
+                  onBlur={() =>
+                    setTimeout(() => setSuggestField((f) => (f === 'from' ? null : f)), 120)
+                  }
                 />
               </View>
               {suggestField === 'from' ? (
@@ -214,9 +259,9 @@ export default function PostRideScreen() {
                 />
               ) : null}
 
-              <Text style={styles.inputLabel}>To</Text>
+              <Text style={styles.fieldLabel}>To</Text>
               <View style={styles.inputWrap}>
-                <Navigation color="#64748b" size={18} />
+                <Navigation color={BRAND_DEEP} size={20} />
                 <TextInput
                   style={styles.input}
                   placeholder="Destination"
@@ -237,9 +282,9 @@ export default function PostRideScreen() {
                 />
               ) : null}
 
-              <Text style={styles.inputLabel}>Price</Text>
-              <View style={styles.inputWrap}>
-                <Coins color="#64748b" size={18} />
+              <Text style={styles.fieldLabel}>Your fare</Text>
+              <View style={[styles.inputWrap, styles.priceWrap]}>
+                <Coins color="#f39c12" size={20} />
                 <TextInput
                   style={styles.input}
                   placeholder={pricePlaceholder}
@@ -252,25 +297,31 @@ export default function PostRideScreen() {
 
               {currentLocation ? (
                 <View style={styles.locationChip}>
-                  <CircleCheck color="#16a34a" size={14} />
-                  <Text style={styles.locationChipText}>Current location will be used as pickup point</Text>
+                  <CircleCheck color="#27ae60" size={16} />
+                  <Text style={styles.locationChipText}>GPS pickup point ready — drivers see where to meet you</Text>
                 </View>
               ) : (
                 <View style={[styles.locationChip, styles.locationChipWarn]}>
                   <Text style={styles.locationChipWarnText}>
-                    Location not ready yet. Ride will post without pickup coordinates.
+                    Turn on location for a precise pickup pin. You can still post with text only.
                   </Text>
                 </View>
               )}
-              <Text style={styles.searchHint}>Tip: You can search by district, sector, or street (e.g. KK 454 St).</Text>
+              <Text style={styles.tip}>
+                Tip: district, sector, or street (e.g. KK 454 St) — same as on Home.
+              </Text>
             </View>
 
             <TouchableOpacity
-              style={[styles.postButton, (!isFormValid || isSubmitting) && styles.postButtonDisabled]}
+              style={[styles.cta, (!isFormValid || isSubmitting) && styles.ctaDisabled]}
               onPress={handlePost}
               disabled={!isFormValid || isSubmitting}
+              activeOpacity={0.9}
             >
-              <Text style={styles.postButtonText}>{isSubmitting ? 'Posting...' : 'Post Ride'}</Text>
+              <Text style={styles.ctaText}>{isSubmitting ? 'Posting…' : 'Post ride'}</Text>
+              <View style={styles.ctaIconCircle}>
+                <ArrowRight color="#fff" size={22} />
+              </View>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -282,155 +333,229 @@ export default function PostRideScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: BRAND,
   },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 24,
+    paddingBottom: 32,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
+  topBar: {
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
   backButton: {
-    marginRight: 12,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    alignSelf: 'flex-start',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTextWrap: {
-    flex: 1,
-    marginTop: 2,
+  hero: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
-  headerTitle: {
-    fontSize: 21,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  headerSubtitle: {
-    marginTop: 2,
-    fontSize: 13,
-    color: '#64748b',
-  },
-  formContainer: {
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardHeading: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#334155',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  modeHintRow: {
-    marginTop: 10,
+  heroBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginBottom: 12,
   },
-  modeHintText: {
+  heroBadgeText: {
+    color: '#fff',
     fontSize: 13,
-    color: '#475569',
+    fontWeight: '700',
+  },
+  heroTitle: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: -0.5,
+  },
+  heroSubtitle: {
+    marginTop: 10,
+    fontSize: 16,
+    lineHeight: 23,
+    color: 'rgba(255,255,255,0.92)',
     fontWeight: '600',
   },
-  inputLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '700',
-    marginTop: 8,
+  routeVisual: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 40,
+    gap: 10,
+  },
+  routeDot: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  routeLine: {
+    flex: 1,
+    maxWidth: 120,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+  },
+  sheet: {
+    flex: 1,
+    backgroundColor: '#f4f9fd',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingTop: 22,
+    paddingBottom: 8,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 152, 219, 0.12)',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: TEXT_MAIN,
     marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  },
+  cardHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  cardHintText: {
+    flex: 1,
+    fontSize: 13,
+    color: TEXT_MUTED,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    color: TEXT_MUTED,
+    fontWeight: '700',
+    marginTop: 10,
+    marginBottom: 8,
   },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: '#f8fafc',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    borderRadius: 14,
-    paddingHorizontal: 12,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+  },
+  priceWrap: {
+    borderColor: 'rgba(243, 156, 18, 0.35)',
+    backgroundColor: '#fffbeb',
   },
   input: {
     flex: 1,
-    paddingVertical: 13,
+    paddingVertical: 14,
     fontSize: 16,
-    color: '#0f172a',
+    color: TEXT_MAIN,
+    fontWeight: '600',
   },
   locationChip: {
-    marginTop: 12,
-    borderRadius: 12,
-    backgroundColor: '#ecfdf5',
+    marginTop: 14,
+    borderRadius: 14,
+    backgroundColor: '#e8f8f2',
     borderWidth: 1,
-    borderColor: '#bbf7d0',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderColor: '#c8eed9',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   locationChipText: {
     flex: 1,
-    fontSize: 12,
-    color: '#166534',
-    fontWeight: '600',
+    fontSize: 13,
+    color: '#1e8449',
+    fontWeight: '700',
+    lineHeight: 18,
   },
   locationChipWarn: {
-    backgroundColor: '#fff7ed',
-    borderColor: '#fed7aa',
+    backgroundColor: '#fef5e7',
+    borderColor: '#fad7a0',
   },
   locationChipWarnText: {
-    fontSize: 12,
-    color: '#9a3412',
-    fontWeight: '600',
+    fontSize: 13,
+    color: '#b9770e',
+    fontWeight: '700',
+    lineHeight: 18,
   },
-  searchHint: {
-    marginTop: 10,
+  tip: {
+    marginTop: 12,
     fontSize: 12,
-    color: '#64748b',
+    color: TEXT_MUTED,
     lineHeight: 17,
     fontWeight: '500',
   },
-  postButton: {
-    backgroundColor: '#0f172a',
-    paddingVertical: 15,
-    borderRadius: 14,
+  cta: {
+    backgroundColor: BRAND,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
     marginTop: 4,
+    marginBottom: 8,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 6,
   },
-  postButtonDisabled: {
-    backgroundColor: '#94a3b8',
+  ctaDisabled: {
+    backgroundColor: '#bdc3c7',
+    shadowOpacity: 0,
   },
-  postButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.2,
+  ctaText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  ctaIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
