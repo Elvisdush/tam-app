@@ -1,0 +1,15 @@
+{
+  "fileVersion": "1",
+  "tools": [
+    {
+      "fileVersion": "1",
+      "tool": {
+        "name": "checkov"
+      },
+      "arguments": {
+        "SkipFramework": "kustomize",
+        "TargetDirectory": "tam-app/tam"
+      }
+    }
+  ]
+}

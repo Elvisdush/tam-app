@@ -1,0 +1,5 @@
+# Checkov config for CI / Microsoft Security DevOps (Guardian).
+# Avoids the Windows Kustomize runner WinError 32 (temp file rename race).
+# Kubernetes YAML under k8s/base is still scanned via the kubernetes framework.
+skip-framework:
+  - kustomize
