@@ -409,7 +409,7 @@ npx tsc --noEmit -p frontend/tsconfig.json
 
 - **`Body is unusable: Body has already been read` (@expo/cli):** Comes from disk response caching tee’ing the **same** fetch `Response` body; if cache reconstruction fails, the CLI could return that consumed response. This repo ships **`frontend/patches/@expo+cli+54.0.24.patch`** — applied via **`patch-package`** on **`frontend`** `postinstall` and from the repo-root **`postinstall`** helper. Workaround without patching: **`EXPO_NO_CACHE=1`** (disables that cache layer).
 
-- **Web / Metro crash (`empty path ... JSC-safe format`):** Fast Refresh sometimes registers **`http://localhost:8082/?platform=web`** (path `/`), which **`jsc-safe-url`** used to reject. Patched via **`frontend/patches/jsc-safe-url+0.2.4.patch`** (applied with `@expo/cli` patches).
+- **Web / Metro crash (`empty path ... JSC-safe format`):** Fast Refresh sometimes registers **`http://localhost:8082/?platform=web`** (path `/`), which **`jsc-safe-url`** used to reject. Patched via **`frontend/patches/jsc-safe-url+0.2.4.patch`** using a synthetic path segment **`/__expo_web_query_placeholder__`** (not **`/.`**, which Metro treats as **`./`** and breaks HMR resolution).
 
 - **Windows + Metro:** `frontend/metro.config.js` excludes other platforms’ `@expo/ngrok-bin-*` packages from the file map to avoid `ENOENT` watch errors on optional darwin/linux folders.
 
