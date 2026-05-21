@@ -14,19 +14,25 @@ import {
   KeyboardAvoidingView,
   Image,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import MapView from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Menu, Crosshair, X, Radio, Shield, Phone, Mail, Bike, Car } from 'lucide-react-native';
+import { Menu, Crosshair, X, Radio, Shield, Phone, Mail, Bike, Car, Clock, Route } from 'lucide-react-native';
 import { useAuthStore } from '@/store/auth-store';
 import { useRideStore } from '@/store/ride-store';
 import { useOnlineDriversStore } from '@/store/online-drivers-store';
 import { PassengerDestinationPicker } from '@/components/PassengerDestinationPicker';
 import { DriverRwandaSuggestList } from '@/components/DriverRwandaSuggestList';
-import { useLocationStore } from '@/store/location-store';
+import { useLocationStore, type RouteData } from '@/store/location-store';
 import NativeMapView from '@/components/NativeMapView';
+import { decodePolyline } from '@/lib/navigation/polyline';
+import {
+  fetchBigDataCloudReverseGeo,
+  formatPlaceLineWithSectorFromBdc,
+} from '@/lib/reverse-geocode-net';
 import { includeDemoNearbyDrivers } from '@/lib/demo-nearby-drivers';
 import type { RwandaDestination } from '@/constants/rwanda-destinations';
 import {
@@ -79,6 +85,17 @@ function pickupLineFromLocation(loc: {
   return `${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}`;
 }
 
+function arrivalTimeFromDuration(duration?: string | null): string {
+  const now = new Date();
+  if (duration) {
+    const match = duration.match(/(\d+)\s*min/);
+    if (match) {
+      now.setMinutes(now.getMinutes() + parseInt(match[1], 10));
+    }
+  }
+  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
@@ -107,7 +124,20 @@ export default function HomeScreen() {
   const [showPickupHelpCard, setShowPickupHelpCard] = useState(true);
   /** Driver sheet: which field shows Rwanda place suggestions */
   const [driverSuggestField, setDriverSuggestField] = useState<'from' | 'to' | null>(null);
+  /** Passenger trip modal: pickup field suggestions */
+  const [passengerPickupSuggest, setPassengerPickupSuggest] = useState(false);
+  /** Manual pickup coordinates (map tap or place pick) */
+  const [pickupOverride, setPickupOverride] = useState<{
+    latitude: number;
+    longitude: number;
+    address?: string;
+  } | null>(null);
+  /** When true, next map tap sets pickup */
+  const [pickupPinMode, setPickupPinMode] = useState(false);
+  const [homeRoute, setHomeRoute] = useState<RouteData | null>(null);
+  const [isCalculatingHomeRoute, setIsCalculatingHomeRoute] = useState(false);
   const driverSuggestBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passengerSuggestBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearDriverSuggestTimer = () => {
     if (driverSuggestBlurTimer.current) {
@@ -129,11 +159,16 @@ export default function HomeScreen() {
     }, 220);
   };
 
-  useEffect(() => () => clearDriverSuggestTimer(), []);
+  useEffect(() => () => {
+    clearDriverSuggestTimer();
+    if (passengerSuggestBlurTimer.current) {
+      clearTimeout(passengerSuggestBlurTimer.current);
+    }
+  }, []);
 
   const searchRides = useRideStore((state) => state.searchRides);
   const addRide = useRideStore((state) => state.addRide);
-  const { currentLocation, startLocationTracking } = useLocationStore();
+  const { currentLocation, startLocationTracking, calculateRoute } = useLocationStore();
   const onlineDrivers = useOnlineDriversStore((state) => state.onlineDrivers);
 
   const liftMapForChrome = user?.type === 'passenger' || user?.type === 'driver';
@@ -180,7 +215,156 @@ export default function HomeScreen() {
       return;
     }
     setFromIsManual(false);
+    setPickupOverride(null);
+    setPickupPinMode(false);
     setFrom(pickupLineFromLocation(loc));
+  };
+
+  const effectivePickupLocation = useMemo(() => {
+    if (pickupOverride) {
+      return {
+        latitude: pickupOverride.latitude,
+        longitude: pickupOverride.longitude,
+        timestamp: currentLocation?.timestamp ?? new Date().toISOString(),
+        address: pickupOverride.address ?? (from.trim() || undefined),
+        accuracyMeters: currentLocation?.accuracyMeters,
+      };
+    }
+    return currentLocation;
+  }, [
+    pickupOverride,
+    currentLocation,
+    from,
+    currentLocation?.latitude,
+    currentLocation?.longitude,
+    currentLocation?.timestamp,
+    currentLocation?.address,
+    currentLocation?.accuracyMeters,
+  ]);
+
+  useEffect(() => {
+    if (user?.type !== 'passenger' || !selectedDestination || !effectivePickupLocation) {
+      setHomeRoute(null);
+      setIsCalculatingHomeRoute(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsCalculatingHomeRoute(true);
+
+    void calculateRoute(
+      {
+        latitude: effectivePickupLocation.latitude,
+        longitude: effectivePickupLocation.longitude,
+        timestamp: effectivePickupLocation.timestamp ?? '',
+        address: effectivePickupLocation.address,
+      },
+      {
+        latitude: selectedDestination.latitude,
+        longitude: selectedDestination.longitude,
+        timestamp: '',
+        address: selectedDestination.name,
+      },
+      { persistToStore: false }
+    ).then((route) => {
+      if (cancelled) return;
+      setHomeRoute(route);
+    }).finally(() => {
+      if (!cancelled) setIsCalculatingHomeRoute(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user?.type,
+    selectedDestination?.id,
+    selectedDestination?.latitude,
+    selectedDestination?.longitude,
+    effectivePickupLocation?.latitude,
+    effectivePickupLocation?.longitude,
+    calculateRoute,
+  ]);
+
+  useEffect(() => {
+    if (
+      user?.type !== 'passenger' ||
+      !selectedDestination ||
+      !effectivePickupLocation ||
+      !homeRoute ||
+      !mapRef.current
+    ) {
+      return;
+    }
+
+    let coords: Array<{ latitude: number; longitude: number }>;
+    if (homeRoute.polyline && homeRoute.polyline !== 'simulated_polyline_data') {
+      try {
+        coords = decodePolyline(homeRoute.polyline);
+      } catch {
+        coords = [
+          {
+            latitude: effectivePickupLocation.latitude,
+            longitude: effectivePickupLocation.longitude,
+          },
+          {
+            latitude: selectedDestination.latitude,
+            longitude: selectedDestination.longitude,
+          },
+        ];
+      }
+    } else {
+      coords = [
+        {
+          latitude: effectivePickupLocation.latitude,
+          longitude: effectivePickupLocation.longitude,
+        },
+        {
+          latitude: selectedDestination.latitude,
+          longitude: selectedDestination.longitude,
+        },
+      ];
+    }
+
+    mapRef.current.fitToCoordinates(coords, {
+      edgePadding: {
+        top: homeMapPadding.top + 24,
+        right: 48,
+        bottom: homeMapPadding.bottom + 24,
+        left: 48,
+      },
+      animated: true,
+    });
+  }, [
+    user?.type,
+    homeRoute?.polyline,
+    selectedDestination?.id,
+    effectivePickupLocation?.latitude,
+    effectivePickupLocation?.longitude,
+    homeMapPadding.top,
+    homeMapPadding.bottom,
+  ]);
+
+  const handleMapPressForPickup = async (coord: { latitude: number; longitude: number }) => {
+    if (user?.type !== 'passenger' || !pickupPinMode) return;
+    setFromIsManual(true);
+    setPickupPinMode(false);
+    setPickupOverride({ latitude: coord.latitude, longitude: coord.longitude });
+    setFrom(pickupLineFromLocation(coord));
+    try {
+      const data = await fetchBigDataCloudReverseGeo(coord.latitude, coord.longitude);
+      const rich = data ? formatPlaceLineWithSectorFromBdc(data) : undefined;
+      if (rich) {
+        setFrom(rich);
+        setPickupOverride({
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+          address: rich,
+        });
+      }
+    } catch {
+      /* keep coordinate line */
+    }
   };
 
   useEffect(() => {
@@ -402,12 +586,18 @@ export default function HomeScreen() {
       ...(scheduled ? { scheduledPickupAt: scheduleDate.toISOString() } : {}),
     };
     if (currentLocation) {
+      const pickup = effectivePickupLocation ?? currentLocation;
       ride.pickupLocation = {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
+        latitude: pickup.latitude,
+        longitude: pickup.longitude,
         address: from.trim(),
       };
     }
+    ride.dropoffLocation = {
+      latitude: selectedDestination.latitude,
+      longitude: selectedDestination.longitude,
+      address: selectedDestination.name,
+    };
     const key = await addRide(ride);
     closeBookingModal();
     if (key) {
@@ -440,14 +630,42 @@ export default function HomeScreen() {
     []
   );
 
+  const showPassengerRoute =
+    user?.type === 'passenger' && !!selectedDestination && !!effectivePickupLocation;
+  const pickupEtaLabel =
+    showPassengerRoute && homeRoute?.duration ? homeRoute.duration : null;
+
   return (
     <View style={styles.container}>
       <NativeMapView
         ref={mapRef}
         currentLocation={currentLocation}
+        pickupLocation={effectivePickupLocation}
+        destinationLocation={
+          selectedDestination
+            ? {
+                latitude: selectedDestination.latitude,
+                longitude: selectedDestination.longitude,
+                label: selectedDestination.name,
+              }
+            : null
+        }
+        routeOverlay={
+          showPassengerRoute && homeRoute
+            ? {
+                polyline: homeRoute.polyline,
+                distance: homeRoute.distance,
+                duration: homeRoute.duration,
+              }
+            : null
+        }
         nearbyDrivers={nearbyDrivers}
-        userNearbyDriverCount={user?.type === 'passenger' ? nearbyDrivers.length : 0}
+        userNearbyDriverCount={
+          user?.type === 'passenger' && !pickupEtaLabel ? nearbyDrivers.length : 0
+        }
+        pickupEtaLabel={pickupEtaLabel}
         onDriverPress={user?.type === 'passenger' ? handleOpenDriverDetails : undefined}
+        onMapPress={user?.type === 'passenger' && pickupPinMode ? handleMapPressForPickup : undefined}
         mapPadding={homeMapPadding}
       />
 
@@ -528,6 +746,12 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {user?.type === 'passenger' && pickupPinMode && (
+          <View style={styles.pickupPinBanner} pointerEvents="none">
+            <Text style={styles.pickupPinBannerText}>Tap the map to set your pickup point</Text>
+          </View>
+        )}
+
         {user?.type === 'passenger' && showPickupHelpCard && (
           <View style={styles.helpCard} pointerEvents="box-none">
             <View style={styles.helpCardInner}>
@@ -546,6 +770,40 @@ export default function HomeScreen() {
           </View>
         )}
       </View>
+
+      {user?.type === 'passenger' && showPassengerRoute && (homeRoute || isCalculatingHomeRoute) && (
+        <View
+          style={[styles.homeRoutePanel, { bottom: bottomSafe + (showTripDetails ? 280 : 200) }]}
+          pointerEvents="none"
+        >
+          {isCalculatingHomeRoute && !homeRoute ? (
+            <View style={styles.homeRouteLoading}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.homeRouteLoadingText}>Calculating route…</Text>
+            </View>
+          ) : homeRoute ? (
+            <>
+              <View style={styles.homeRouteMain}>
+                <Text style={styles.homeRouteArrival}>
+                  {arrivalTimeFromDuration(homeRoute.duration)}
+                </Text>
+                <Text style={styles.homeRouteArrivalLabel}>Arrival</Text>
+              </View>
+              <View style={styles.homeRouteDivider} />
+              <View style={styles.homeRouteStats}>
+                <View style={styles.homeRouteStatRow}>
+                  <Clock color="#94a3b8" size={16} />
+                  <Text style={styles.homeRouteStatText}>{homeRoute.duration}</Text>
+                </View>
+                <View style={styles.homeRouteStatRow}>
+                  <Route color="#94a3b8" size={16} />
+                  <Text style={styles.homeRouteStatText}>{homeRoute.distance}</Text>
+                </View>
+              </View>
+            </>
+          ) : null}
+        </View>
+      )}
 
       <View style={[styles.bottomChrome, { paddingBottom: bottomSafe }]} pointerEvents="box-none">
         {user?.type === 'passenger' && (
@@ -707,6 +965,11 @@ export default function HomeScreen() {
                     <Text style={styles.destinationPreviewValue} numberOfLines={1}>
                       {selectedDestination?.name ?? 'Add destination'}
                     </Text>
+                    {homeRoute && (
+                      <Text style={styles.destinationPreviewEta} numberOfLines={1}>
+                        {homeRoute.duration} · {homeRoute.distance}
+                      </Text>
+                    )}
                   </View>
                   <Text style={styles.destinationPreviewAction}>Add or change</Text>
                 </TouchableOpacity>
@@ -834,14 +1097,65 @@ export default function HomeScreen() {
                   placeholderTextColor="#94a3b8"
                   value={from}
                   onChangeText={onFromChangeText}
+                  onFocus={() => {
+                    if (passengerSuggestBlurTimer.current) {
+                      clearTimeout(passengerSuggestBlurTimer.current);
+                      passengerSuggestBlurTimer.current = null;
+                    }
+                    setPassengerPickupSuggest(true);
+                  }}
+                  onBlur={() => {
+                    passengerSuggestBlurTimer.current = setTimeout(() => {
+                      setPassengerPickupSuggest(false);
+                      passengerSuggestBlurTimer.current = null;
+                    }, 220);
+                  }}
                 />
+                {passengerPickupSuggest ? (
+                  <DriverRwandaSuggestList
+                    query={from}
+                    onPick={(d) => {
+                      setFrom(d.name);
+                      setFromIsManual(true);
+                      setPickupPinMode(false);
+                      if (d.latitude != null && d.longitude != null) {
+                        setPickupOverride({
+                          latitude: d.latitude,
+                          longitude: d.longitude,
+                          address: d.name,
+                        });
+                      }
+                      if (passengerSuggestBlurTimer.current) {
+                        clearTimeout(passengerSuggestBlurTimer.current);
+                        passengerSuggestBlurTimer.current = null;
+                      }
+                      setPassengerPickupSuggest(false);
+                    }}
+                  />
+                ) : null}
                 <View style={styles.pickupFromMeta}>
                   <Text style={styles.pickupAutoHint}>
-                    {fromIsManual ? 'Custom pickup' : 'Filled from your GPS'}
+                    {pickupPinMode
+                      ? 'Tap the map to set pickup'
+                      : fromIsManual
+                        ? 'Custom pickup'
+                        : 'Filled from your GPS'}
                   </Text>
-                  <TouchableOpacity onPress={useCurrentLocationForFrom} hitSlop={8}>
-                    <Text style={styles.pickupLocationLink}>Use current location</Text>
-                  </TouchableOpacity>
+                  <View style={styles.pickupFromActions}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setShowTripDetails(false);
+                        setPickupPinMode(true);
+                      }}
+                      hitSlop={8}
+                    >
+                      <Text style={styles.pickupLocationLink}>Set on map</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.pickupFromActionSep}>·</Text>
+                    <TouchableOpacity onPress={useCurrentLocationForFrom} hitSlop={8}>
+                      <Text style={styles.pickupLocationLink}>Use GPS</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <PassengerDestinationPicker
                   transportType={transportType}
@@ -1261,6 +1575,89 @@ const styles = StyleSheet.create({
   fabRoundSafety: {
     backgroundColor: '#eff6ff',
   },
+  pickupPinBanner: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    top: '28%',
+    alignItems: 'center',
+  },
+  pickupPinBannerText: {
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '700',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  homeRoutePanel: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  homeRouteLoading: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  homeRouteLoadingText: {
+    color: '#e2e8f0',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  homeRouteMain: {
+    alignItems: 'center',
+    paddingRight: 14,
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.25)',
+    minWidth: 72,
+  },
+  homeRouteArrival: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  homeRouteArrivalLabel: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  homeRouteDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    marginHorizontal: 14,
+  },
+  homeRouteStats: {
+    flex: 1,
+    gap: 6,
+  },
+  homeRouteStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  homeRouteStatText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
   helpCard: {
     position: 'absolute',
     left: 20,
@@ -1383,6 +1780,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#0f172a',
+  },
+  destinationPreviewEta: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 2,
   },
   destinationPreviewAction: {
     fontSize: 13,
@@ -1655,6 +2058,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
     paddingHorizontal: 4,
+  },
+  pickupFromActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pickupFromActionSep: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontWeight: '600',
   },
   pickupAutoHint: {
     fontSize: 12,
