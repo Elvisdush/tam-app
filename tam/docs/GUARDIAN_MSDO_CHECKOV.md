@@ -22,7 +22,7 @@ Set this environment variable for the Guardian / Security DevOps step:
 |----------|--------|
 | `GDN_CHECKOV_SKIPFRAMEWORK` | `kustomize` |
 
-**GitHub Actions:** see repo root `.github/workflows/defender-for-devops.yml`.
+**GitHub Actions:** add the same variable to the MSDO / Guardian job’s `env` in your workflow YAML.
 
 **Azure DevOps** (YAML pipeline example):
 
