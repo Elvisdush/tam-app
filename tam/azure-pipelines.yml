@@ -1,0 +1,43 @@
+# Optional Azure DevOps pipeline for Microsoft Security DevOps (Guardian / Checkov).
+#
+# Removing .github/workflows/defender-for-devops.yml does NOT stop scans that are
+# configured in Azure DevOps (MicrosoftSecurityDevOps@1) or Defender for Cloud DevOps onboarding.
+#
+# This file fixes Checkov WinError 32 on Windows by:
+#   1. Using ubuntu-latest (recommended)
+#   2. Setting GDN_CHECKOV_SKIPFRAMEWORK=kustomize
+#   3. Optionally pointing at msdo.gdnconfig
+#
+# To disable Guardian entirely: remove the MicrosoftSecurityDevOps task from your
+# pipeline in Azure DevOps, or disconnect the repo in Defender for Cloud → DevOps.
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+
+  - task: NodeTool@0
+    displayName: Install Node.js
+    inputs:
+      versionSpec: "20.x"
+
+  - script: npm run k8s:render
+    displayName: Render Kustomize (optional flat YAML for scanners)
+    workingDirectory: tam-app/tam
+    continueOnError: true
+
+  - task: MicrosoftSecurityDevOps@1
+    displayName: Microsoft Security DevOps
+    inputs:
+      categories: IaC
+      tools: checkov
+      config: tam-app/tam/msdo.gdnconfig
+    env:
+      GDN_CHECKOV_SKIPFRAMEWORK: kustomize
