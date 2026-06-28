@@ -1,31 +1,26 @@
 # Minimal Backend Dockerfile for TAM App - Backend Only
 FROM node:18-alpine
 
+RUN apk add --no-cache curl
+
 WORKDIR /app
 
-# Copy only backend package.json
-COPY backend/package*.json ./
+# Dependencies live at repo root, not in backend/
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
 
-# Install only backend dependencies
-RUN npm install --production --legacy-peer-deps
+COPY backend ./backend
 
-# Copy backend files only
-COPY backend/ ./
-
-# Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+    adduser -S nodejs -u 1001 && \
+    mkdir -p backend/logs backend/uploads backend/temp && \
+    chown -R nodejs:nodejs /app
 
-# Change ownership
-RUN chown -R nodejs:nodejs /app
 USER nodejs
 
-# Expose port
 EXPOSE 3006
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:3006/health || exit 1
 
-# Start the backend application
-CMD ["node", "hono.js"]
+CMD ["node", "backend/hono.js"]
