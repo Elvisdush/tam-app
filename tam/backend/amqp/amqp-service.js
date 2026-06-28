@@ -331,6 +331,10 @@ class AMQPService extends require('events').EventEmitter {
     return await this.publishWithRetry(QUEUE_TYPES.SYSTEM_TASKS, message, priority, messageId);
   }
 
+  async consumeMessages(queueType, callback, options = {}) {
+    return await this.messageQueueManager.consumeMessages(queueType, callback, options);
+  }
+
   // Message consumption methods
   async startLocationUpdatesConsumer(callback) {
     return await this.messageQueueManager.consumeMessages(

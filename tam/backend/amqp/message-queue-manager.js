@@ -104,11 +104,22 @@ class MessageQueueManager extends EventEmitter {
     }
   }
 
-  async sendMessage(queueType, message, priority = MessageQueueManager.PRIORITIES.NORMAL, exchangeName, routingKey) {
-    const queueInfo = this.queues.get(queueType);
-    if (!queueInfo) {
-      throw new Error(`Queue ${queueType} not found`);
+  resolveQueueKey(queueType) {
+    if (this.queues.has(queueType)) {
+      return queueType;
     }
+
+    const defaultQueueName = `${queueType}.default`;
+    if (this.queues.has(defaultQueueName)) {
+      return defaultQueueName;
+    }
+
+    throw new Error(`Queue ${queueType} not found`);
+  }
+
+  async sendMessage(queueType, message, priority = MessageQueueManager.PRIORITIES.NORMAL, exchangeName, routingKey) {
+    const queueKey = this.resolveQueueKey(queueType);
+    const queueInfo = this.queues.get(queueKey);
 
     try {
       const messageData = {
@@ -153,10 +164,8 @@ class MessageQueueManager extends EventEmitter {
   }
 
   async consumeMessages(queueType, callback, options = {}) {
-    const queueInfo = this.queues.get(queueType);
-    if (!queueInfo) {
-      throw new Error(`Queue ${queueType} not found`);
-    }
+    const queueKey = this.resolveQueueKey(queueType);
+    const queueInfo = this.queues.get(queueKey);
 
     try {
       await queueInfo.channel.consume(queueInfo.name, async (msg) => {
